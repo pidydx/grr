@@ -935,3 +935,62 @@ message WMICommandLineEventConsumer {
     description: "Maximum queue for a specific consumer, in bytes."
   }];
 }
+
+// Windows Scheduled Tasks
+message WinTaskAction {
+  optional string action_type = 1;
+  optional string exec_command = 2;
+  optional string exec_arguments = 3;
+  optional string exec_working_directory = 4;
+  optional string comhandler_classid = 5;
+  optional string comhandler_data = 6;
+  optional string sendemail_server = 7;
+  optional string sendemail_subject = 8;
+  optional string sendemail_to = 9;
+  optional string sendemail_cc = 10;
+  optional string sendemail_bcc = 11;
+  optional string sendemail_replyto = 12;
+  optional string sendemail_from = 13;
+  optional string sendemail_body = 14;
+  optional string sendemail_attachements = 15;
+  optional string sendemail_headers = 16;
+  optional string showmessage_title = 17;
+  optional string showmessage_body = 18;
+}
+
+message WinTask {
+  optional string aff4path = 1[(sem_type) = {
+    type: "RDFURN",
+    description: "The location of this file in the AFF4 space."
+  }];
+  optional string status = 2;
+  optional string priority = 3;
+  optional string name = 4;
+  optional string application_name = 5;
+  optional string parameters = 6;
+  optional string comment = 7;
+  optional string working_directory = 8;
+  optional string account_name = 9;
+  optional string account_run_level = 10;
+  optional string account_logon_type = 11;
+  optional string creator = 12;
+  optional string exit_code = 13;
+  optional uint64 creation_date = 14 [(sem_type) = {
+      type: "RDFDatetime",
+      description: "Time of most recent successful agent run",
+    }];
+  optional uint64 most_recent_run_time = 15 [(sem_type) = {
+      type: "RDFDatetime",
+      description: "Time of most recent successful agent run",
+    }];
+  optional uint64 max_run_time = 16 [(sem_type) = {
+      type: "RDFDatetime",
+      description: "Time of most recent successful agent run",
+    }];
+  optional uint64 next_run_time = 17 [(sem_type) = {
+      type: "RDFDatetime",
+      description: "Time of most recent successful agent run",
+    }];
+  repeated WinTaskAction action_list = 18;
+}
+

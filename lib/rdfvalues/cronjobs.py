@@ -11,3 +11,11 @@ class CronTabEntry(structs.RDFProtoStruct):
 
 class CronTabFile(structs.RDFProtoStruct):
   protobuf = sysinfo_pb2.CronTabFile
+
+
+class WinTask(structs.RDFProtoStruct):
+  protobuf = sysinfo_pb2.WinTask
+
+
+class WinTaskAction(structs.RDFProtoStruct):
+  protobuf = sysinfo_pb2.WinTaskAction
