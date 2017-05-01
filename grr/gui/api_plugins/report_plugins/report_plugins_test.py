@@ -15,6 +15,7 @@ from grr.gui.api_plugins.report_plugins import server_report_plugins
 
 from grr.lib import aff4
 from grr.lib import client_fixture
+from grr.lib import data_store
 from grr.lib import events
 from grr.lib import flags
 from grr.lib import rdfvalue
@@ -80,9 +81,10 @@ class ReportUtilsTest(test_lib.GRRBaseTest):
     two_weeks_ago = rdfvalue.RDFDatetime.Now() - rdfvalue.Duration("2w")
     with test_lib.FakeTime(two_weeks_ago):
       AddFakeAuditLog("Fake outdated audit log.", token=self.token)
+      data_store.DB.Flush()
     AddFakeAuditLog("Fake audit description foo.", token=self.token)
     AddFakeAuditLog("Fake audit description bar.", token=self.token)
-
+    data_store.DB.Flush()
     audit_events = {
         ev.description: ev
         for fd in audit.AuditLogsForTimespan(
@@ -118,6 +120,7 @@ class ClientReportPluginsTest(test_lib.GRRBaseTest):
           "C.1%015X" % i,
           token=self.token,
           fixture=client_fixture.LINUX_FIXTURE)
+    data_store.DB.Flush()
 
   def testGRRVersionReportPlugin(self):
     self.MockClients()
@@ -410,6 +413,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User123",
           description="Approval request description.",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22"), increment=1):
@@ -425,6 +429,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User456",
           description="Grant.",
           token=self.token)
+      data_store.DB.Flush()
 
     report = report_plugins.GetReportByName(
         server_report_plugins.ClientApprovalsReportPlugin.__name__)
@@ -504,6 +509,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User123",
           flow_name="Flow123",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22"), increment=1):
@@ -519,6 +525,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User456",
           flow_name="Flow456",
           token=self.token)
+      data_store.DB.Flush()
 
     report = report_plugins.GetReportByName(
         server_report_plugins.HuntActionsReportPlugin.__name__)
@@ -601,6 +608,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User123",
           description="Approval grant description.",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22"), increment=1):
@@ -610,6 +618,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
             user="User%d" % i,
             description="Approval request.",
             token=self.token)
+      data_store.DB.Flush()
 
       AddFakeAuditLog(
           action=events.AuditEvent.Action.HUNT_APPROVAL_GRANT,
@@ -696,6 +705,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User123",
           description="Approval grant description.",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22"), increment=1):
@@ -705,6 +715,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
             user="User%d" % i,
             description="Approval request.",
             token=self.token)
+      data_store.DB.Flush()
 
       AddFakeAuditLog(
           action=events.AuditEvent.Action.CRON_APPROVAL_GRANT,
@@ -792,6 +803,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           "C.123",
           "User123",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22")):
@@ -807,6 +819,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           "C.456",
           "User456",
           token=self.token)
+      data_store.DB.Flush()
 
     report = report_plugins.GetReportByName(
         server_report_plugins.MostActiveUsersReportPlugin.__name__)
@@ -873,6 +886,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="GRR",
           flow_name="Flow123",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22")):
@@ -888,6 +902,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="GRR",
           flow_name="Flow456",
           token=self.token)
+      data_store.DB.Flush()
 
     report = report_plugins.GetReportByName(
         server_report_plugins.SystemFlowsReportPlugin.__name__)
@@ -951,6 +966,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           "C.123",
           "User123",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22")):
@@ -966,6 +982,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           "C.456",
           "User456",
           token=self.token)
+      data_store.DB.Flush()
 
     report = report_plugins.GetReportByName(
         server_report_plugins.UserActivityReportPlugin.__name__)
@@ -1059,6 +1076,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User123",
           flow_name="Flow123",
           token=self.token)
+      data_store.DB.Flush()
 
     with test_lib.FakeTime(
         rdfvalue.RDFDatetime.FromHumanReadable("2012/12/22")):
@@ -1074,6 +1092,7 @@ class ServerReportPluginsTest(test_lib.GRRBaseTest):
           user="User456",
           flow_name="Flow456",
           token=self.token)
+      data_store.DB.Flush()
 
     report = report_plugins.GetReportByName(
         server_report_plugins.UserFlowsReportPlugin.__name__)

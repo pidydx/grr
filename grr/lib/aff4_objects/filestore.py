@@ -189,23 +189,18 @@ class HashFileStore(FileStore):
   }
 
   def AddURN(self, sha256hash, file_urn):
-    index_urn = self.PATH.Add("generic/sha256").Add(sha256hash)
-    self._AddToIndex(index_urn, file_urn)
+    hash_urn = self.PATH.Add("generic/sha256").Add(sha256hash)
+    self._AddToIndex(hash_urn, file_urn)
 
-  def _AddToIndex(self, index_urn, file_urn):
-    predicate = ("index:target:%s" % file_urn).lower()
-    data_store.DB.MultiSet(
-        index_urn, {predicate: file_urn},
-        token=self.token,
-        replace=True,
-        sync=False)
+  def _AddToIndex(self, hash_urn, file_urn):
+    data_store.DB.CreateHashIndex(hash_urn, file_urn, token=self.token)
 
   @classmethod
-  def Query(cls, index_urn, target_prefix="", limit=100, token=None):
+  def Query(cls, hash_urn, limit=100, token=None):
     """Search the index for matches starting with target_prefix.
 
     Args:
-       index_urn: The index to use. Should be a urn that points to the sha256
+       hash_urn: The index to use. Should be a urn that points to the sha256
                   namespace.
        target_prefix: The prefix to match against the index.
 
@@ -217,8 +212,6 @@ class HashFileStore(FileStore):
       URNs of files which have the same data as this file - as read from the
       index.
     """
-    # Make the full prefix.
-    prefix = ["index:target:%s" % target_prefix.lower()]
     if isinstance(limit, (tuple, list)):
       start, length = limit  # pylint: disable=unpacking-non-sequence
 
@@ -227,9 +220,8 @@ class HashFileStore(FileStore):
       length = limit
 
     # Get all the unique hits
-    for i, (_, hit, _) in enumerate(
-        data_store.DB.ResolvePrefix(
-            index_urn, prefix, token=token, limit=limit)):
+    for i, hit in enumerate(
+        data_store.DB.ReadHashIndex(hash_urn, limit=limit, token=token)):
 
       if i < start:
         continue
@@ -243,14 +235,14 @@ class HashFileStore(FileStore):
   def GetReferencesMD5(cls, md5_hash, target_prefix="", limit=100, token=None):
     urn = aff4.ROOT_URN.Add("files/hash/generic/md5").Add(str(md5_hash))
     fd = aff4.FACTORY.Open(urn, token=token)
-    return cls.Query(fd.urn, target_prefix="", limit=100, token=token)
+    return cls.Query(fd.urn, limit=100, token=token)
 
   @classmethod
   def GetReferencesSHA1(cls, sha1_hash, target_prefix="", limit=100,
                         token=None):
     urn = aff4.ROOT_URN.Add("files/hash/generic/sha1").Add(str(sha1_hash))
     fd = aff4.FACTORY.Open(urn, token=token)
-    return cls.Query(fd.urn, target_prefix="", limit=100, token=token)
+    return cls.Query(fd.urn, limit=100, token=token)
 
   @classmethod
   def GetReferencesSHA256(cls,
@@ -260,7 +252,7 @@ class HashFileStore(FileStore):
                           token=None):
     urn = aff4.ROOT_URN.Add("files/hash/generic/sha256").Add(str(sha256_hash))
     fd = aff4.FACTORY.Open(urn, token=token)
-    return cls.Query(fd.urn, target_prefix="", limit=100, token=token)
+    return cls.Query(fd.urn, limit=100, token=token)
 
   def CheckHashes(self, hashes):
     """Check hashes against the filestore.
@@ -517,16 +509,15 @@ class HashFileStore(FileStore):
     timestamp = aff4.FACTORY.ParseAgeSpecification(age)
 
     index_objects = list(aff4.FACTORY.MultiOpen(hashes, token=token))
-    index_locations = {}
+    hash_urns = {}
     for o in index_objects:
-      index_locations.setdefault(o.urn, []).append(o.symlink_urn)
-    for hash_obj, client_files in data_store.DB.MultiResolvePrefix(
-        index_locations, "index:target:", token=token, timestamp=timestamp):
-      symlinks = index_locations[hash_obj]
-      for original_hash in symlinks:
-        hash_obj = original_hash or hash_obj
-        yield (FileStoreHash(hash_obj),
-               [file_urn for _, file_urn, _ in client_files])
+      hash_urns.setdefault(o.urn, []).append(o.symlink_urn)
+
+    for hash_urn, file_urns in data_store.DB.MultiReadHashIndexes(hash_urns, timestamp=timestamp, token=token):
+      symlinks = hash_urns[hash_urn]
+      for symlink_urn in symlinks:
+        hash_urn = symlink_urn or hash_urn
+        yield (FileStoreHash(hash_urn), file_urns)
 
 
 class NSRLFile(FileStoreImage):

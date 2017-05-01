@@ -2,6 +2,7 @@
 """Initialize for tests."""
 
 import os
+import uuid
 
 from grr.config import contexts
 from grr.lib import config_lib
@@ -44,7 +45,7 @@ def TestInit():
   # Tests additionally add a test configuration file.
   config_lib.SetPlatformArchContext()
   config_lib.ParseConfigCommandLine()
-
+  config_lib.CONFIG.Set("Mysql.database_name", "grr_test_%s" % uuid.uuid1())
   if not INIT_RAN:
     log.ServerLoggingStartupInit()
 

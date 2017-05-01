@@ -16,6 +16,7 @@ from grr.client import comms
 from grr.lib import aff4
 from grr.lib import communicator
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import front_end
 from grr.lib import queues
@@ -143,7 +144,7 @@ class ClientCommsTest(test_lib.GRRBaseTest):
     client_now = now - 20
     with test_lib.FakeTime(now):
       self.ClientServerCommunicate(timestamp=client_now)
-
+      data_store.DB.Flush()
       client_obj = aff4.FACTORY.Open(new_client.urn, token=self.token)
       self.assertEqual(
           now.AsSecondsFromEpoch(),
@@ -156,7 +157,7 @@ class ClientCommsTest(test_lib.GRRBaseTest):
     client_now += 40
     with test_lib.FakeTime(now):
       self.ClientServerCommunicate(timestamp=client_now)
-
+      data_store.DB.Flush()
       client_obj = aff4.FACTORY.Open(new_client.urn, token=self.token)
       self.assertEqual(
           now.AsSecondsFromEpoch(),

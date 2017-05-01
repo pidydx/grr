@@ -33,7 +33,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
       fd.Add(rdf_flows.GrrMessage(request_id=i))
 
     fd.Close()
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open(urn, token=self.token)
     # Make sure items are stored in order.
     j = 0
@@ -59,7 +59,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
         private_key=config_lib.CONFIG[
             "PrivateKeys.executable_signing_private_key"],
         public_key=config_lib.CONFIG["Client.executable_signing_public_key"])
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open(urn, token=self.token)
 
     # Reading works as expected.
@@ -85,7 +85,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
       fd.Add(rdf_flows.GrrMessage(request_id=i))
 
     fd.Close()
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open(
         urn, collects.RDFValueCollection, mode="rw", token=self.token)
 
@@ -93,7 +93,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
       fd.Add(rdf_flows.GrrMessage(request_id=i + 5))
 
     fd.Close()
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open(urn, token=self.token)
     # Make sure items are stored in order.
     j = 0
@@ -126,7 +126,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
     self.assertEqual(len(fd.fd.chunk_cache._hash), 1)
 
     fd.Close()
-
+    data_store.DB.Flush()
     # Closing the collection empties the chunk_cache.
     self.assertEqual(len(fd.fd.chunk_cache._hash), 0)
 
@@ -153,7 +153,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
     # specified, so we get default value.
     fd.Add(None)
     fd.Close()
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open(urn, token=self.token)
     self.assertEqual(len(fd), 1)
     self.assertEqual(fd[0], rdf_paths.PathSpec())
@@ -176,7 +176,7 @@ class TestCollections(test_lib.AFF4ObjectTest):
             "PrivateKeys.executable_signing_private_key"],
         public_key=config_lib.CONFIG["Client.executable_signing_public_key"],
         token=self.token)
-
+    data_store.DB.Flush()
     sample = aff4.FACTORY.Open(urn, token=self.token)
     self.assertEqual(sample.size, len(test_string))
     self.assertEqual(sample.Tell(), 0)

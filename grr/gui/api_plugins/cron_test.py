@@ -6,7 +6,7 @@
 
 from grr.gui import api_test_lib
 from grr.gui.api_plugins import cron as cron_plugin
-
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import test_lib
 from grr.lib.aff4_objects import cronjobs
@@ -56,6 +56,7 @@ class ApiDeleteCronJobHandlerTest(api_test_lib.ApiCallHandlerTest,
 
     self.cron_job_urn = self.CreateCronJob(
         flow_name=cron_system.OSBreakDown.__name__, token=self.token)
+    data_store.DB.Flush()
 
   def testDeletesCronFromCollection(self):
     jobs = list(cronjobs.CRON_MANAGER.ListJobs(token=self.token))

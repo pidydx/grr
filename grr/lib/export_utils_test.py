@@ -6,6 +6,7 @@ import stat
 
 
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import export_utils
 from grr.lib import flags
 from grr.lib import rdfvalue
@@ -37,6 +38,7 @@ class TestExports(test_lib.FlowTestsBaseclass):
     self.CreateFile("testdir1/testfile3")
     self.CreateDir("testdir1/testdir2")
     self.CreateFile("testdir1/testdir2/testfile4")
+    data_store.DB.Flush()
 
     self.collection_urn = self.client_id.Add("testcoll")
 
@@ -106,6 +108,7 @@ class TestExports(test_lib.FlowTestsBaseclass):
         self.collection_urn, collects.RDFValueCollection, token=self.token)
     self._AddTestData(fd)
     fd.Close()
+    data_store.DB.Flush()
     self._VerifyDownload()
 
   def testDownloadGeneralIndexedCollection(self):
@@ -159,7 +162,7 @@ class TestExports(test_lib.FlowTestsBaseclass):
         rdf_file_finder.FileFinderResult(stat_entry=rdf_client.StatEntry(
             pathspec=rdf_paths.PathSpec(path="testfile5", pathtype="OS"))))
     fd.Close()
-
+    data_store.DB.Flush()
     with utils.TempDirectory() as tmpdir:
       export_utils.DownloadCollection(
           self.collection_urn,
@@ -197,6 +200,7 @@ class TestExports(test_lib.FlowTestsBaseclass):
             pathspec=rdf_paths.PathSpec(path="testdir1", pathtype="OS"),
             st_mode=stat.S_IFDIR)))
     fd.Close()
+    data_store.DB.Flush()
 
     with utils.TempDirectory() as tmpdir:
       export_utils.DownloadCollection(

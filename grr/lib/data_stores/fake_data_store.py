@@ -188,6 +188,13 @@ class FakeDataStore(data_store.DataStore):
 
       for key in keys_to_delete:
         record.pop(key)
+
+      #If no attributes exist for the subject delete the subject
+      if len(self.subjects[subject]) == 0:
+        try:
+          del self.subjects[subject]
+        except KeyError:
+          pass
     except KeyError:
       pass
 

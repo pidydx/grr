@@ -17,7 +17,7 @@ class ClientIndexTest(test_lib.AFF4ObjectTest):
 
   def testAnalyzeClient(self):
     index = aff4.FACTORY.Create(
-        "aff4:/client-index/",
+        client_index.MAIN_INDEX,
         aff4_type=client_index.ClientIndex,
         mode="rw",
         token=self.token)
@@ -62,7 +62,7 @@ class ClientIndexTest(test_lib.AFF4ObjectTest):
 
   def testAddLookupClients(self):
     index = aff4.FACTORY.Create(
-        "aff4:/client-index1/",
+        client_index.MAIN_INDEX,
         aff4_type=client_index.ClientIndex,
         mode="rw",
         token=self.token)
@@ -123,7 +123,7 @@ class ClientIndexTest(test_lib.AFF4ObjectTest):
 
   def testAddTimestamp(self):
     index = aff4.FACTORY.Create(
-        "aff4:/client-index2/",
+        client_index.MAIN_INDEX,
         aff4_type=client_index.ClientIndex,
         mode="rw",
         token=self.token)
@@ -157,7 +157,7 @@ class ClientIndexTest(test_lib.AFF4ObjectTest):
 
   def testUnversionedKeywords(self):
     index = aff4.FACTORY.Create(
-        "aff4:/client-index3/",
+        client_index.MAIN_INDEX,
         aff4_type=client_index.ClientIndex,
         mode="rw",
         token=self.token)
@@ -201,7 +201,7 @@ class ClientIndexTest(test_lib.AFF4ObjectTest):
     client.AddLabels("testlabel_2", token=self.token)
     client.Flush()
     index = aff4.FACTORY.Create(
-        "aff4:/client-index4/",
+        client_index.MAIN_INDEX,
         aff4_type=client_index.ClientIndex,
         mode="rw",
         token=self.token)
@@ -230,7 +230,7 @@ class ClientIndexTest(test_lib.AFF4ObjectTest):
 
   def testBulkLabelClients(self):
     index = aff4.FACTORY.Create(
-        "aff4:/client-index4/",
+        client_index.MAIN_INDEX,
         aff4_type=client_index.ClientIndex,
         mode="rw",
         token=self.token)

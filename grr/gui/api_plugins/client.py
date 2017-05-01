@@ -351,7 +351,6 @@ class ApiListClientCrashesHandler(api_call_handler_base.ApiCallHandler):
     total_count = len(aff4_crashes)
     result = api_call_handler_utils.FilterCollection(aff4_crashes, args.offset,
                                                      args.count, args.filter)
-
     return ApiListClientCrashesResult(items=result, total_count=total_count)
 
 
@@ -502,24 +501,13 @@ class ApiListClientActionRequestsHandler(api_call_handler_base.ApiCallHandler):
   REQUESTS_NUM_LIMIT = 1000
 
   def _GetRequestResponses(self, manager, client_urn, task_id):
-    task_id = "task:%s" % task_id
-
     request_messages = manager.Query(client_urn, task_id=task_id)
     if not request_messages:
       return []
 
     request_message = request_messages[0]
-    state_queue = request_message.session_id.Add("state/request:%08X" %
-                                                 request_message.request_id)
-
-    result = []
-    predicate_pre = (
-        manager.FLOW_RESPONSE_PREFIX + "%08X" % request_message.request_id)
     # Get all the responses for this request.
-    for _, serialized_message, _ in data_store.DB.ResolvePrefix(
-        state_queue, predicate_pre, token=manager.token):
-      result.append(
-          rdf_flows.GrrMessage.FromSerializedString(serialized_message))
+    result = [response for response, _ in data_store.DB.ReadResponses(request_message.session_id, request_message.request_id, token=manager.token)]
 
     return result
 

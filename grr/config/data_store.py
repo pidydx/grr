@@ -102,7 +102,7 @@ config_lib.DEFINE_integer(
     "Mysql.conn_pool_max",
     10,
     help=("The maximum number of open connections to keep"
-          " available in the pool."))
+          " available in the pool. 0 disables connection pooling."))
 
 config_lib.DEFINE_integer(
     "Mysql.conn_pool_min",

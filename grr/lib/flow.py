@@ -216,15 +216,9 @@ class Responses(object):
     token.supervisor = True
 
     logging.error(
-        "No valid Status message.\nState:\n%s\n%s\n%s",
-        data_store.DB.ResolvePrefix(
-            session_id.Add("state"), "flow:", token=token),
-        data_store.DB.ResolvePrefix(
-            session_id.Add("state/request:%08X" % responses[0].request_id),
-            "flow:",
-            token=token),
-        data_store.DB.ResolvePrefix(
-            queues.FLOWS, "notify:%s" % session_id, token=token))
+        "No valid Status message.\nState:\n%s\n%s",
+        data_store.DB.ReadRequests(session_id, token=token),
+        data_store.DB.ReadResponses(session_id, responses[0].request_id, token=token))
 
 
 class FakeResponses(Responses):
@@ -1101,21 +1095,9 @@ class GRRFlow(FlowBase):
   def GetFlowRequests(flow_urns, token=None):
     """Returns all outstanding requests for the flows in flow_urns."""
     flow_requests = {}
-    flow_request_urns = [flow_urn.Add("state") for flow_urn in flow_urns]
-
-    for flow_urn, values in data_store.DB.MultiResolvePrefix(
-        flow_request_urns, "flow:", token=token):
-      for subject, serialized, _ in values:
-        try:
-          if "status" in subject:
-            msg = rdf_flows.GrrMessage.FromSerializedString(serialized)
-          else:
-            msg = rdf_flows.RequestState.FromSerializedString(serialized)
-        except Exception as e:  # pylint: disable=broad-except
-          logging.warn("Error while parsing: %s", e)
-          continue
-
-        flow_requests.setdefault(flow_urn, []).append(msg)
+    for flow_urn in flow_urns:
+      for request, _ in data_store.DB.ReadRequests(flow_urn, token=token):
+        flow_requests.setdefault(flow_urn, []).append(request)
     return flow_requests
 
   # All the collections flows use.

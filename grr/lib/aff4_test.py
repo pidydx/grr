@@ -66,7 +66,7 @@ class DeletionPoolTest(test_lib.AFF4ObjectTest):
   def testMarkForDeletionAddsChildrenToDeletionSet(self):
     self._CreateObject("aff4:/a", aff4.AFF4MemoryStream)
     self._CreateObject("aff4:/a/b", aff4.AFF4MemoryStream)
-
+    data_store.DB.Flush()
     self.pool.MarkForDeletion(rdfvalue.RDFURN("aff4:/a"))
 
     self.assertEqual(
@@ -87,7 +87,7 @@ class DeletionPoolTest(test_lib.AFF4ObjectTest):
     self._CreateObject("aff4:/c", aff4.AFF4MemoryStream)
     self._CreateObject("aff4:/c/d", aff4.AFF4MemoryStream)
     self._CreateObject("aff4:/c/e", aff4.AFF4MemoryStream)
-
+    data_store.DB.Flush()
     self.pool.MultiMarkForDeletion(
         [rdfvalue.RDFURN("aff4:/a"), rdfvalue.RDFURN("aff4:/c")])
 
@@ -232,7 +232,7 @@ class DeletionPoolTest(test_lib.AFF4ObjectTest):
   def testListChildrenResultsAreCached(self):
     self._CreateObject("aff4:/a", aff4.AFF4Volume)
     self._CreateObject("aff4:/a/b", aff4.AFF4Volume)
-
+    data_store.DB.Flush()
     result = self.pool.ListChildren("aff4:/a")
     self.assertListEqual(result, ["aff4:/a/b"])
 
@@ -258,19 +258,20 @@ class DeletionPoolTest(test_lib.AFF4ObjectTest):
 
     self._CreateObject("aff4:/b", aff4.AFF4Volume)
     self._CreateObject("aff4:/b/c", aff4.AFF4Volume)
-
+    data_store.DB.Flush()
     result = self.pool.MultiListChildren(["aff4:/a"])
+
     self.assertEqual(result, {"aff4:/a": ["aff4:/a/b"]})
 
     self._CreateObject("aff4:/a/foo", aff4.AFF4Volume)
     self._CreateObject("aff4:/b/bar", aff4.AFF4Volume)
-
+    data_store.DB.Flush()
     # Check that cached children lists are not refetched.
     result = self.pool.MultiListChildren(["aff4:/a", "aff4:/b"])
-    self.assertEqual(
-        result,
-        {"aff4:/a": ["aff4:/a/b"],
-         "aff4:/b": ["aff4:/b/bar", "aff4:/b/c"]})
+
+    self.assertEqual(result["aff4:/a"], ["aff4:/a/b"])
+    self.assertItemsEqual(result["aff4:/b"], ["aff4:/b/bar", "aff4:/b/c"])
+
 
   def testRecursiveMultiListChildrenResultsAreCached(self):
     result = self.pool.RecursiveMultiListChildren(["aff4:/a", "aff4:/b"])
@@ -286,14 +287,14 @@ class DeletionPoolTest(test_lib.AFF4ObjectTest):
     self._CreateObject("aff4:/a", aff4.AFF4Volume)
     self._CreateObject("aff4:/a/b", aff4.AFF4Volume)
     self._CreateObject("aff4:/a/b/c", aff4.AFF4Volume)
-
+    data_store.DB.Flush()
     # This should put aff4:/a and aff4:/a/b into the cache.
     # Note that there's aff4:/a/b/c children were not queried and cached.
     self.pool.MultiListChildren(["aff4:/a", "aff4:/a/b"])
 
     self._CreateObject("aff4:/a/foo", aff4.AFF4Volume)
     self._CreateObject("aff4:/a/b/c/d", aff4.AFF4Volume)
-
+    data_store.DB.Flush()
     # aff4:/a children were cached, so aff4:/a/foo won't be present in
     # the results. On the other hand, aff4:/a/b/c/d should be in the
     # results because children of aff4:/a/b/c weren't queried and cached.
@@ -842,7 +843,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
     # Now object is ready for use
     fd.Write("hello")
     fd.Close()
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open(path, token=self.token)
     self.assertEqual(fd.Read(100), "hello")
 
@@ -876,17 +877,12 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
 
     # Make sure nothing has been written to the paths we use.
     for path in [path1, path2]:
-      for subject in data_store.DB.subjects:
-        self.assertNotIn(path, subject)
+      self.assertItemsEqual(data_store.DB.ResolveRow(path, token=self.token), [])
 
     pool.Flush()
 
     for path in [path1, path2]:
-      for subject in data_store.DB.subjects:
-        if path in subject:
-          break
-      else:
-        self.fail("Nothing was written to the test path (%s)" % path)
+      self.assertNotEqual(len(data_store.DB.ResolveRow(path, token=self.token)), 0)
 
     fd = aff4.FACTORY.Open(path1, token=self.token)
     self.assertEqual(fd.read(100), content)
@@ -931,9 +927,10 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
     fd = aff4.FACTORY.Create(path, aff4.AFF4MemoryStream, token=self.token)
     fd.Write("hello")
     fd.Close()
-
+    data_store.DB.Flush()
     # Delete the directory and check that the file in it is also removed.
     aff4.FACTORY.Delete(os.path.dirname(path), token=self.token)
+
     self.assertRaises(
         IOError,
         aff4.FACTORY.Open,
@@ -958,12 +955,13 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
       with aff4.FACTORY.Create(
           path, aff4.AFF4MemoryStream, token=self.token) as fd:
         fd.Write("hello")
-
+    data_store.DB.Flush()
     fd = aff4.FACTORY.Open("aff4:/tmp", token=self.token)
     self.assertListEqual(
         sorted(fd.ListChildren()), ["aff4:/tmp/dir1", "aff4:/tmp/dir2"])
 
     aff4.FACTORY.Delete("aff4:/tmp/dir1", token=self.token)
+
     for path in paths_to_delete:
       self.assertRaises(
           IOError,
@@ -989,27 +987,25 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
 
   def testMultiDeleteRemovesAllTracesOfObjectsFromDataStore(self):
     unique_token = "recursive_delete"
-
+    urns = []
     for i in range(5):
       for j in range(5):
+        urn = "aff4:" + ("/%s%d" % (unique_token, i)) * (j + 1)
+        urns.append(urn)
         with aff4.FACTORY.Create(
-            "aff4:" + ("/%s%d" % (unique_token, i)) * (j + 1),
+            urn,
             aff4.AFF4Volume,
             token=self.token):
           pass
-
+    data_store.DB.Flush()
     aff4.FACTORY.MultiDelete(
         ["aff4:/%s%d" % (unique_token, i) for i in range(5)], token=self.token)
 
-    # NOTE: We assume that tests are running with FakeDataStore.
-    for subject, subject_data in data_store.DB.subjects.items():
-      self.assertFalse(unique_token in subject)
+    # NOTE: We assume that tests are running with a datastore that implements the 'subjects' method.
 
-      for column_name, values in subject_data.items():
-        self.assertFalse(unique_token in column_name)
-
-        for value, _ in values:
-          self.assertFalse(unique_token in utils.SmartUnicode(value))
+    for urn in urns:
+      self.assertItemsEqual(data_store.DB.ResolveRow(urn, token=self.token), [])
+      self.assertItemsEqual(list(data_store.DB.ReadAFF4Index(urn, timestamp=None, token=self.token)), [])
 
   def testClientObject(self):
     fd = aff4.FACTORY.Create(
@@ -1292,7 +1288,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
     f = aff4.FACTORY.Create(
         root_urn.Add("some2"), aff4.AFF4Volume, token=self.token)
     f.Close()
-
+    data_store.DB.Flush()
     root = aff4.FACTORY.Open(root_urn, token=self.token)
     all_children = list(
         aff4.FACTORY.MultiOpen(
@@ -1311,7 +1307,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
     f = aff4.FACTORY.Create(
         root_urn.Add("some2"), aff4.AFF4Volume, token=self.token)
     f.Close()
-
+    data_store.DB.Flush()
     root = aff4.FACTORY.Open(root_urn, token=self.token)
     all_children = sorted(list(root.ListChildren()))
 
@@ -1329,7 +1325,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
     with aff4.FACTORY.Create(
         client2_urn.Add("some2"), aff4.AFF4Volume, token=self.token):
       pass
-
+    data_store.DB.Flush()
     children = dict(
         aff4.FACTORY.MultiListChildren(
             [client1_urn, client2_urn], token=self.token))
@@ -1348,7 +1344,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
     with aff4.FACTORY.Create(
         client_urn.Add("some2"), aff4.AFF4Volume, token=self.token):
       pass
-
+    data_store.DB.Flush()
     children = aff4.FACTORY.ListChildren(client_urn, token=self.token)
     self.assertListEqual(
         sorted(children), [client_urn.Add("some1"), client_urn.Add("some2")])
@@ -1360,12 +1356,13 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
           aff4_type=aff4.AFF4Volume,
           token=self.token)
       fd.Close()
+      data_store.DB.Flush()
 
     fd = aff4.FACTORY.Open(self.client_id, token=self.token)
     children = list(fd.ListChildren())
     self.assertEqual(len(children), 1)
-    self.assertEqual(children[0].age,
-                     rdfvalue.RDFDatetime().FromSecondsFromEpoch(100))
+    self.assertEqual(int(children[0].age),
+                     int(rdfvalue.RDFDatetime().FromSecondsFromEpoch(100)))
 
     latest_time = 100 + config_lib.CONFIG["AFF4.intermediate_cache_age"] - 1
     with utils.Stubber(time, "time", lambda: latest_time):
@@ -1374,6 +1371,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
           aff4_type=aff4.AFF4Volume,
           token=self.token)
       fd.Close()
+      data_store.DB.Flush()
 
     fd = aff4.FACTORY.Open(self.client_id, token=self.token)
     children = list(fd.ListChildren())
@@ -1388,6 +1386,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
           aff4_type=aff4.AFF4Volume,
           token=self.token)
       fd.Close()
+      data_store.DB.Flush()
 
     fd = aff4.FACTORY.Open(self.client_id, token=self.token)
     children = list(fd.ListChildren())
@@ -1402,6 +1401,7 @@ class AFF4Tests(test_lib.AFF4ObjectTest):
           aff4_type=aff4.AFF4Volume,
           token=self.token)
       fd.Close()
+      data_store.DB.Flush()
 
     fd = aff4.FACTORY.Open(self.client_id, token=self.token)
     children = list(fd.ListChildren())

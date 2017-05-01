@@ -5,17 +5,17 @@
 from grr.lib import data_store_test
 from grr.lib import flags
 from grr.lib import test_lib
-from grr.lib.data_stores import mysql_advanced_data_store_test
+from grr.lib.data_stores import mysql_experimental_data_store_test
 
 
-class MySQLAdvancedDataStoreBenchmarks(
-    mysql_advanced_data_store_test.MySQLAdvancedTestMixin,
+class MySQLExperimentalDataStoreBenchmarks(
+    mysql_experimental_data_store_test.MySQLExperimentalTestMixin,
     data_store_test.DataStoreBenchmarks):
   """Benchmark the mysql data store abstraction."""
 
 
-class MySQLAdvancedDataStoreCSVBenchmarks(
-    mysql_advanced_data_store_test.MySQLAdvancedTestMixin,
+class MySQLExperimentalDataStoreCSVBenchmarks(
+    mysql_experimental_data_store_test.MySQLExperimentalTestMixin,
     data_store_test.DataStoreCSVBenchmarks):
   """Benchmark the mysql data store abstraction."""
 

@@ -185,23 +185,22 @@ class StatsStoreProcessData(aff4.AFF4Object):
           store_value.fields_values = store_fields_values
           store_value.SetValue(value, metadata.value_type)
 
-          to_set.setdefault(self.STATS_STORE_PREFIX + name,
-                            []).append(store_value)
+          to_set.setdefault(name, []).append(store_value)
       else:
         value = stats.STATS.GetMetricValue(name)
         store_value = StatsStoreValue()
         store_value.SetValue(value, metadata.value_type)
 
-        to_set[self.STATS_STORE_PREFIX + name] = [store_value]
+        to_set[name] = [store_value]
 
     # Write actual data
-    data_store.DB.MultiSet(
-        self.urn,
-        to_set,
-        replace=False,
-        token=self.token,
-        timestamp=timestamp,
-        sync=sync)
+    data_store.DB.CreateStats(
+      self.urn,
+      to_set,
+      timestamp=timestamp,
+      sync=sync,
+      token=self.token
+    )
 
   def DeleteStats(self, timestamp=ALL_TIMESTAMPS, sync=False):
     """Deletes all stats in the given time range."""
@@ -209,17 +208,15 @@ class StatsStoreProcessData(aff4.AFF4Object):
     if timestamp == self.NEWEST_TIMESTAMP:
       raise ValueError("Can't use NEWEST_TIMESTAMP in DeleteStats.")
 
-    predicates = []
-    for key in stats.STATS.GetAllMetricsMetadata().keys():
-      predicates.append(self.STATS_STORE_PREFIX + key)
+    metric_names = stats.STATS.GetAllMetricsMetadata().keys()
 
     start = None
     end = None
     if timestamp and timestamp != self.ALL_TIMESTAMPS:
       start, end = timestamp
 
-    data_store.DB.DeleteAttributes(
-        self.urn, predicates, start=start, end=end, token=self.token, sync=sync)
+    data_store.DB.DeleteStats(self.urn, metric_names, start=start, end=end, sync=sync, token=self.token)
+
 
 
 class StatsStore(aff4.AFF4Volume):
@@ -323,34 +320,23 @@ class StatsStore(aff4.AFF4Volume):
 
     multi_metadata = self.MultiReadMetadata(process_ids=process_ids)
 
-    subjects = [
+    process_stats_stores = [
         self.DATA_STORE_ROOT.Add(process_id) for process_id in process_ids
     ]
 
-    multi_query_results = data_store.DB.MultiResolvePrefix(
-        subjects,
-        StatsStoreProcessData.STATS_STORE_PREFIX + (metric_name or ""),
-        token=self.token,
-        timestamp=timestamp,
-        limit=limit)
-
     results = {}
-    for subject, subject_results in multi_query_results:
-      subject = rdfvalue.RDFURN(subject)
-      subject_results = sorted(subject_results, key=lambda x: x[2])
-      subject_metadata_map = multi_metadata.get(
-          subject.Basename(), StatsStoreMetricsMetadata()).AsDict()
+    stats_metrics = data_store.DB.ReadStats(process_stats_stores, metric_name=metric_name, timestamp=timestamp, limit=limit,
+                                            token=self.token)
 
+    for process_stats_store, metrics_data in stats_metrics.items():
+      metadata_map = multi_metadata.get(process_stats_store, StatsStoreMetricsMetadata()).AsDict()
       part_results = {}
-      for predicate, value_string, timestamp in subject_results:
-        metric_name = predicate[len(StatsStoreProcessData.STATS_STORE_PREFIX):]
-
+      for metric_name, value_string, timestamp in metrics_data:
+        stored_value = StatsStoreValue.FromSerializedString(value_string)
         try:
-          metadata = subject_metadata_map[metric_name]
+          metadata = metadata_map[metric_name]
         except KeyError:
           continue
-
-        stored_value = StatsStoreValue.FromSerializedString(value_string)
 
         fields_values = []
         if metadata.fields_defs:
@@ -369,7 +355,7 @@ class StatsStore(aff4.AFF4Volume):
 
         result_values_list.append((stored_value.value, timestamp))
 
-      results[subject.Basename()] = part_results
+      results[process_stats_store] = part_results
 
     return results
 

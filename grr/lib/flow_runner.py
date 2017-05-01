@@ -431,7 +431,7 @@ class FlowRunner(object):
     # ASAP. This must happen before we actually run the flow to ensure the
     # client requests are removed from the client queues.
     with queue_manager.QueueManager(token=self.token) as manager:
-      for request, _ in manager.FetchCompletedRequests(
+      for request in manager.FetchCompletedRequests(
           self.session_id, timestamp=(0, notification.timestamp)):
         # Requests which are not destined to clients have no embedded request
         # message.

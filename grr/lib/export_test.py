@@ -11,6 +11,7 @@ from grr.client.components.rekall_support import grr_rekall
 from grr.client.components.rekall_support import rekall_types as rdf_rekall_types
 from grr.lib import action_mocks
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import events
 from grr.lib import export
 from grr.lib import flags
@@ -844,7 +845,7 @@ class ExportTest(ExportTestBase):
             st_mtime=1336129892,
             st_ctime=1336129892))
     fd.Close()
-
+    data_store.DB.Flush()
     converter = export.RDFURNConverter()
     results = list(converter.Convert(self.metadata, urn, token=self.token))
 

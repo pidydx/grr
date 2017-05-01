@@ -18,6 +18,7 @@ from grr.lib import config_lib
 from grr.lib import data_store
 from grr.lib import rdfvalue
 from grr.lib import utils
+from grr.config import contexts
 
 # We use INSERT IGNOREs which generate useless duplicate entry warnings.
 filterwarnings("ignore", category=MySQLdb.Warning, message=r"Duplicate entry.*")
@@ -50,9 +51,10 @@ class SafeQueue(Queue.Queue):
 class MySQLConnection(object):
   """A Class to manage MySQL database connections."""
 
-  def __init__(self, database_name):
+  def __init__(self):
+    database_name = config_lib.CONFIG["Mysql.database_name"]
     try:
-      self.dbh = self._MakeConnection(database=database_name)
+      self.dbh = self._MakeConnection(database_name)
       self.cursor = self.dbh.cursor()
       self.cursor.connection.autocommit(True)
       self.cursor.execute("SET NAMES binary")
@@ -65,15 +67,15 @@ class MySQLConnection(object):
         cursor.execute("Create database `%s`" % database_name)
         cursor.close()
         dbh.close()
-
-        self.dbh = self._MakeConnection(database=database_name)
+        data_store.DB._CreateTables()
+        self.dbh = self._MakeConnection(database_name)
         self.cursor = self.dbh.cursor()
         self.cursor.connection.autocommit(True)
         self.cursor.execute("SET NAMES binary")
       else:
         raise
 
-  def _MakeConnection(self, database=""):
+  def _MakeConnection(self, database_name = ""):
     """Repeat connection attempts to server until we get a valid connection."""
     first_attempt_time = time.time()
     wait_time = config_lib.CONFIG["Mysql.max_connect_wait"]
@@ -81,7 +83,7 @@ class MySQLConnection(object):
       try:
         connection_args = dict(
             user=config_lib.CONFIG["Mysql.database_username"],
-            db=database,
+            db=database_name,
             charset="utf8",
             passwd=config_lib.CONFIG["Mysql.database_password"],
             cursorclass=cursors.DictCursor,
@@ -111,25 +113,28 @@ class ConnectionPool(object):
   Uses unfinished_tasks to track the number of open connections.
   """
 
-  def __init__(self, database_name):
+  def __init__(self):
     self.connections = SafeQueue()
-    self.database_name = database_name
-    self.pool_max_size = int(config_lib.CONFIG["Mysql.conn_pool_max"])
-    self.pool_min_size = int(config_lib.CONFIG["Mysql.conn_pool_min"])
-    for _ in range(self.pool_min_size):
-      self.connections.put(MySQLConnection(self.database_name))
 
   def GetConnection(self):
+    pool_max_size = int(config_lib.CONFIG["Mysql.conn_pool_max"])
     if self.connections.empty() and (
-        self.connections.unfinished_tasks < self.pool_max_size):
-      self.connections.put(MySQLConnection(self.database_name))
-    connection = self.connections.get(block=True)
+        self.connections.unfinished_tasks < pool_max_size):
+      self.connections.put(MySQLConnection())
+    if pool_max_size == 0:
+      connection = MySQLConnection()
+    else:
+      connection = self.connections.get(block=True)
     return connection
 
   def PutConnection(self, connection):
     # If the pool is low on connections return this connection to the pool
+    if int(config_lib.CONFIG["Mysql.conn_pool_max"]) == 0:
+      pool_min_size = 0
+    else:
+      pool_min_size = int(config_lib.CONFIG["Mysql.conn_pool_min"])
 
-    if self.connections.qsize() < self.pool_min_size:
+    if self.connections.qsize() < pool_min_size:
       self.connections.put(connection)
     else:
       self.DropConnection(connection)
@@ -146,6 +151,10 @@ class ConnectionPool(object):
     except MySQLdb.Error:
       pass
 
+  def QueryComplete(self):
+    if int(config_lib.CONFIG["Mysql.conn_pool_max"]) > 0:
+      self.connections.task_done()
+
 
 class MySQLAdvancedDataStore(data_store.DataStore):
   """A mysql based data store."""
@@ -153,20 +162,28 @@ class MySQLAdvancedDataStore(data_store.DataStore):
   POOL = None
 
   def __init__(self):
-    self.database_name = config_lib.CONFIG["Mysql.database_name"]
     # Use the global connection pool.
     if MySQLAdvancedDataStore.POOL is None:
-      MySQLAdvancedDataStore.POOL = ConnectionPool(self.database_name)
+      MySQLAdvancedDataStore.POOL = ConnectionPool()
     self.pool = self.POOL
 
     self.to_replace = []
     self.to_insert = []
     self._CalculateAttributeStorageTypes()
-    self.database_name = config_lib.CONFIG["Mysql.database_name"]
     self.buffer_lock = threading.RLock()
     self.lock = threading.RLock()
 
     super(MySQLAdvancedDataStore, self).__init__()
+
+  #TODO(user) This is a hack to get around common usage of FakeDataStore subjects property in tests
+  @property
+  def subjects(self):
+    subjects = {}
+    rows, _ = self.ExecuteQuery("SELECT subjects.subject, attributes.attribute, aff4.value, aff4.timestamp FROM aff4 JOIN subjects ON aff4.subject_hash=subjects.hash JOIN attributes ON aff4.attribute_hash=attributes.hash")
+    for row in rows:
+      value = self._Decode(row['attribute'], row["value"])
+      subjects.setdefault(row['subject'], {}).setdefault(row['attribute'], []).append((value, row['timestamp']))
+    return subjects
 
   def Initialize(self):
     super(MySQLAdvancedDataStore, self).Initialize()
@@ -174,21 +191,23 @@ class MySQLAdvancedDataStore(data_store.DataStore):
       self.ExecuteQuery("desc `aff4`")
     except MySQLdb.Error:
       logging.debug("Recreating Tables")
-      self.RecreateTables()
+      self.Clear()
+
+  def Destroy(self):
+    self.ExecuteQuery("DROP DATABASE `%s`" % config_lib.CONFIG["Mysql.database_name"])
 
   def DropTables(self):
     """Drop all existing tables."""
 
     rows, _ = self.ExecuteQuery(
         "SELECT table_name FROM information_schema.tables "
-        "WHERE table_schema='%s'" % self.database_name)
+        "WHERE table_schema='%s'" % config_lib.CONFIG["Mysql.database_name"])
     for row in rows:
       self.ExecuteQuery("DROP TABLE `%s`" % row["table_name"])
 
-  def RecreateTables(self):
+  def Clear(self):
     """Drops the tables and creates a new ones."""
     self.DropTables()
-
     self._CreateTables()
 
   def DBSubjectLock(self, subject, lease_time=None, token=None):
@@ -198,7 +217,7 @@ class MySQLAdvancedDataStore(data_store.DataStore):
     query = ("SELECT table_schema, Sum(data_length + index_length) `size` "
              "FROM information_schema.tables "
              "WHERE table_schema = \"%s\" GROUP by table_schema" %
-             self.database_name)
+             config_lib.CONFIG["Mysql.database_name"])
 
     result, _ = self.ExecuteQuery(query, [])
     if len(result) != 1:
@@ -360,7 +379,6 @@ class MySQLAdvancedDataStore(data_store.DataStore):
                      token=None,
                      relaxed_order=False):
     _ = relaxed_order  # Unused
-
     if after_urn:
       after_urn = utils.SmartStr(after_urn)
     else:
@@ -370,7 +388,7 @@ class MySQLAdvancedDataStore(data_store.DataStore):
 
     for attribute in attributes:
       attribute_results = self._ScanAttribute(subject_prefix, attribute,
-                                              after_urn, max_records, token)
+                                              after_urn, token=token)
 
       for row in attribute_results:
         subject = row["subject"]
@@ -428,8 +446,20 @@ class MySQLAdvancedDataStore(data_store.DataStore):
         if replace or attribute in to_delete:
           existing = self._CountExistingRows(subject, attribute)
           if existing:
+            # Ensure only the latest value is in the buffer.
+            with self.buffer_lock:
+              for buf_subject, buf_attribute, buf_data, buf_ts in self.to_replace:
+                if subject == buf_subject:
+                  if attribute == buf_attribute:
+                    self.to_replace.remove([buf_subject, buf_attribute, buf_data, buf_ts])
             to_replace.append([subject, attribute, data, entry_timestamp])
           else:
+            # Ensure only the latest value is in the buffer.
+            with self.buffer_lock:
+              for buf_subject, buf_attribute, buf_data, buf_ts in self.to_insert:
+                if subject == buf_subject:
+                  if attribute == buf_attribute:
+                    self.to_insert.remove([buf_subject, buf_attribute, buf_data, buf_ts])
             to_insert.append([subject, attribute, data, entry_timestamp])
           if attribute in to_delete:
             to_delete.remove(attribute)
@@ -531,6 +561,9 @@ class MySQLAdvancedDataStore(data_store.DataStore):
     seen["attributes"] = []
 
     for (subject, attribute, value, timestamp) in values:
+      #This is a hack to allow for testing with FakeTime while letting MySQL set timestamps in production to avoid races
+      if timestamp is None and contexts.TEST_CONTEXT in config_lib.CONFIG.context:
+        timestamp = time.time() * 1000000
       if subject not in seen["subjects"]:
         subjects_q["args"].extend([subject, subject])
         seen["subjects"].append(subject)
@@ -568,6 +601,7 @@ class MySQLAdvancedDataStore(data_store.DataStore):
       except MySQLdb.Error as e:
         # If there was an error attempt to clean up this connection and let it
         # drop
+        print e
         self.pool.DropConnection(connection)
         if "doesn't exist" in str(e):
           # This should indicate missing tables and raise immediately
@@ -579,9 +613,9 @@ class MySQLAdvancedDataStore(data_store.DataStore):
           # resolve.
           time.sleep(1)
       finally:
-        # Reduce the open connection count by calling task_done. This will
+        # Reduce the open connection count by calling QueryComplete. This will
         # increment again if the connection is returned to the pool.
-        self.pool.connections.task_done()
+        self.pool.QueryComplete()
 
   def _ExecuteQueries(self, queries):
     """Get connection from pool and execute queries."""
@@ -618,9 +652,9 @@ class MySQLAdvancedDataStore(data_store.DataStore):
           # resolve.
           time.sleep(1)
       finally:
-        # Reduce the open connection count by calling task_done. This will
+        # Reduce the open connection count by calling QueryComplete. This will
         # increment again if the connection is returned to the pool.
-        self.pool.connections.task_done()
+        self.pool.QueryComplete()
 
   def _CalculateAttributeStorageTypes(self):
     """Build a mapping between column names and types."""
@@ -688,7 +722,7 @@ class MySQLAdvancedDataStore(data_store.DataStore):
       fields += ", attributes.attribute"
 
     # Modify fields and sorting for timestamps.
-    if timestamp is None or timestamp == self.NEWEST_TIMESTAMP:
+    if timestamp == self.NEWEST_TIMESTAMP:
       tables += (" JOIN (SELECT attribute_hash, MAX(timestamp) timestamp "
                  "%s %s GROUP BY attribute_hash) maxtime ON "
                  "aff4.attribute_hash=maxtime.attribute_hash AND "
@@ -773,7 +807,7 @@ class MySQLAdvancedDataStore(data_store.DataStore):
     CREATE TABLE IF NOT EXISTS `subjects` (
       hash BINARY(16) PRIMARY KEY NOT NULL,
       subject TEXT CHARACTER SET utf8 NULL,
-      KEY `subject` (`subject`(96))
+      KEY `subject` (`subject`(16))
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT ='Table for storing subjects';
     """)
 
@@ -781,7 +815,7 @@ class MySQLAdvancedDataStore(data_store.DataStore):
     CREATE TABLE IF NOT EXISTS `attributes` (
       hash BINARY(16) PRIMARY KEY NOT NULL,
       attribute VARCHAR(2048) CHARACTER SET utf8 DEFAULT NULL,
-      KEY `attribute` (`attribute`(32))
+      KEY `attribute` (`attribute`(16))
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT ='Table storing attributes';
     """)
 

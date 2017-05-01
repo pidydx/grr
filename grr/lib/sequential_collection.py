@@ -11,7 +11,6 @@ from grr.lib import access_control
 from grr.lib import data_store
 from grr.lib import rdfvalue
 from grr.lib import registry
-from grr.lib import utils
 
 from grr.lib.rdfvalues import flows as rdf_flows
 from grr.lib.rdfvalues import protodict as rdf_protodict
@@ -28,32 +27,15 @@ class SequentialCollection(object):
   # The type which we store, subclasses must set this to a subclass of RDFValue.
   RDF_TYPE = None
 
-  # The attribute (column) where we store value.
-  ATTRIBUTE = "aff4:sequential_value"
 
   # The largest possible suffix - maximum value expressible by 6 hex digits.
   MAX_SUFFIX = 2**24 - 1
 
   def __init__(self, collection_id, token=None):
     super(SequentialCollection, self).__init__()
-    # The collection_id for this collection is a RDFURN for now.
+    # collection_id for this collection is a RDFURN.
     self.collection_id = collection_id
     self.token = token
-
-  @classmethod
-  def _MakeURN(cls, urn, timestamp, suffix=None):
-    if suffix is None:
-      # Disallow 0 so that subtracting 1 from a normal suffix doesn't require
-      # special handling.
-      suffix = random.randint(1, cls.MAX_SUFFIX)
-    return urn.Add("Results").Add("%016x.%06x" % (timestamp, suffix))
-
-  @classmethod
-  def _ParseURN(cls, urn):
-    string_urn = utils.SmartUnicode(urn)
-    if len(string_urn) < 31 or string_urn[-7] != ".":
-      return None
-    return (int(string_urn[-23:-7], 16), int(string_urn[-6:], 16))
 
   @classmethod
   def StaticAdd(cls,
@@ -112,24 +94,14 @@ class SequentialCollection(object):
     if not isinstance(collection_urn, rdfvalue.RDFURN):
       collection_urn = rdfvalue.RDFURN(collection_urn)
 
-    result_subject = cls._MakeURN(collection_urn, timestamp, suffix)
-    if mutation_pool:
-      mutation_pool.Set(
-          result_subject,
-          cls.ATTRIBUTE,
-          rdf_value.SerializeToString(),
-          timestamp=timestamp,
-          **kwargs)
-    else:
-      data_store.DB.Set(
-          result_subject,
-          cls.ATTRIBUTE,
-          rdf_value.SerializeToString(),
-          timestamp=timestamp,
-          token=token,
-          **kwargs)
+    if suffix is None:
+      suffix = random.randint(1, cls.MAX_SUFFIX)
 
-    return cls._ParseURN(result_subject)
+    if mutation_pool:
+      mutation_pool.CreateCollectionItem(collection_urn, rdf_value, timestamp, suffix)
+    else:
+      data_store.DB.CreateCollectionItem(collection_urn, rdf_value, timestamp, suffix, token=token)
+    return (timestamp, suffix)
 
   def Add(self, rdf_value, timestamp=None, suffix=None, **kwargs):
     """Adds an rdf value to the collection.
@@ -186,40 +158,26 @@ class SequentialCollection(object):
       timestamp.
 
     """
-    after_urn = None
+
     if after_timestamp is not None:
       if isinstance(after_timestamp, tuple):
-        suffix = after_timestamp[1]
+        after_suffix = after_timestamp[1]
         after_timestamp = after_timestamp[0]
       else:
-        suffix = self.MAX_SUFFIX
-      after_urn = utils.SmartStr(
-          self._MakeURN(self.collection_id, after_timestamp, suffix=suffix))
+        after_suffix = self.MAX_SUFFIX
+    else:
+      after_suffix=None
 
-    for subject, timestamp, value in data_store.DB.ScanAttribute(
-        self.collection_id.Add("Results"),
-        self.ATTRIBUTE,
-        after_urn=after_urn,
-        max_records=max_records,
-        token=self.token):
-      rdf_value = self.RDF_TYPE.FromSerializedString(value)
+    for rdf_value, timestamp, suffix in data_store.DB.ScanCollectionItems(self.collection_id, self.RDF_TYPE, after_timestamp=after_timestamp, after_suffix=after_suffix, limit=max_records, token=self.token):
       rdf_value.age = timestamp
       if include_suffix:
-        yield (self._ParseURN(subject), rdf_value)
+        yield ((timestamp, suffix), rdf_value)
       else:
         yield (timestamp, rdf_value)
 
   def MultiResolve(self, timestamps):
     """Lookup multiple values by (timestamp, suffix) pairs."""
-    for _, v in data_store.DB.MultiResolvePrefix(
-        [
-            self._MakeURN(self.collection_id, ts, suffix)
-            for (ts, suffix) in timestamps
-        ],
-        self.ATTRIBUTE,
-        token=self.token):
-      _, value, timestamp = v[0]
-      rdf_value = self.RDF_TYPE.FromSerializedString(value)
+    for rdf_value, timestamp in data_store.DB.ReadCollectionItems(self.collection_id, timestamps, rdf_type=self.RDF_TYPE, token=self.token):
       rdf_value.age = timestamp
       yield rdf_value
 
@@ -228,13 +186,7 @@ class SequentialCollection(object):
       yield item
 
   def Delete(self):
-    pool = data_store.DB.GetMutationPool(self.token)
-    with pool:
-      for subject, _, _ in data_store.DB.ScanAttribute(
-          self.collection_id.Add("Results"), self.ATTRIBUTE, token=self.token):
-        pool.DeleteSubject(subject)
-        if pool.Size() > 50000:
-          pool.Flush()
+    data_store.DB.DeleteCollection(self.collection_id, token=self.token)
 
 
 class BackgroundIndexUpdater(object):
@@ -335,11 +287,9 @@ class IndexedSequentialCollection(SequentialCollection):
       return
     self._index = {0: (0, 0)}
     self._max_indexed = 0
-    for (attr, value, ts) in data_store.DB.ResolvePrefix(
-        self.collection_id, self.INDEX_ATTRIBUTE_PREFIX, token=self.token):
-      i = int(attr[len(self.INDEX_ATTRIBUTE_PREFIX):], 16)
-      self._index[i] = (ts, int(value, 16))
-      self._max_indexed = max(i, self._max_indexed)
+    for idx, timestamp, suffix in data_store.DB.ReadCollectionIndexEntries(self.collection_id, token=self.token):
+      self._index[idx] = (timestamp, suffix)
+      self._max_indexed = max(idx, self._max_indexed)
 
   def _MaybeWriteIndex(self, i, ts, mutation_pool):
     """Write index marker i."""
@@ -352,12 +302,7 @@ class IndexedSequentialCollection(SequentialCollection):
         # give up in that case. TODO(user): Remove this when the ACL
         # system allows.
         try:
-          mutation_pool.Set(
-              self.collection_id,
-              self.INDEX_ATTRIBUTE_PREFIX + "%08x" % i,
-              "%06x" % ts[1],
-              timestamp=ts[0],
-              replace=True)
+          mutation_pool.CreateCollectionIndexEntry(self.collection_id, i, item_timestamp=ts[0], item_suffix=ts[1])
           self._index[i] = ts
           self._max_indexed = max(i, self._max_indexed)
         except access_control.UnauthorizedAccess:

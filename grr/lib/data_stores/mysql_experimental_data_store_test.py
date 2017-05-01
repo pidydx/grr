@@ -10,10 +10,10 @@ from grr.lib import data_store
 from grr.lib import data_store_test
 from grr.lib import flags
 from grr.lib import test_lib
-from grr.lib.data_stores import mysql_advanced_data_store
+from grr.lib.data_stores import mysql_experimental_data_store
 
 
-class MySQLAdvancedTestMixin(object):
+class MySQLExperimentalTestMixin(object):
 
   disabled = False
 
@@ -25,18 +25,17 @@ class MySQLAdvancedTestMixin(object):
         username="test", reason="Running tests")
     # Use separate tables for benchmarks / tests so they can be run in parallel.
     with test_lib.ConfigOverrider({
-        "Mysql.database_name": "grr_test_%s" % self.__class__.__name__,
-        "Mysql.max_connect_wait": 2
+        "Mysql.database_name": "grr_test_%s" % self.__class__.__name__
     }):
       try:
-        data_store.DB = mysql_advanced_data_store.MySQLAdvancedDataStore()
+        data_store.DB = mysql_experimental_data_store.MySQLExperimentalDataStore()
         data_store.DB.Initialize()
         data_store.DB.flusher_thread.Stop()
         data_store.DB.security_manager = test_lib.MockSecurityManager()
         data_store.DB.Clear()
       except Exception as e:
         logging.debug("Error while connecting to MySQL db: %s.", e)
-        MySQLAdvancedTestMixin.disabled = True
+        MySQLExperimentalTestMixin.disabled = True
         raise unittest.SkipTest("Skipping since Mysql db is not reachable.")
 
   def DestroyDatastore(self):
@@ -45,11 +44,11 @@ class MySQLAdvancedTestMixin(object):
   def testCorrectDataStore(self):
     self.assertTrue(
         isinstance(data_store.DB,
-                   mysql_advanced_data_store.MySQLAdvancedDataStore))
+                   mysql_experimental_data_store.MySQLExperimentalDataStore))
 
 
-class MySQLAdvancedDataStoreTest(MySQLAdvancedTestMixin,
-                                 data_store_test._DataStoreTest):
+class MySQLExperimentalDataStoreTest(MySQLExperimentalTestMixin,
+                                     data_store_test._DataStoreTest):
   """Test the mysql data store abstraction."""
 
   def testMultiSet(self):
@@ -61,7 +60,7 @@ class MySQLAdvancedDataStoreTest(MySQLAdvancedTestMixin,
         (int(version_major) == 5 and int(version_minor) <= 5)):
       self.skipTest("This test needs MySQL >= 5.6")
     else:
-      super(MySQLAdvancedDataStoreTest, self).testMultiSet()
+      super(MySQLExperimentalDataStoreTest, self).testMultiSet()
 
 
 def main(args):

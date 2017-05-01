@@ -57,7 +57,7 @@ class CollectionFilesExportPluginTest(test_lib.GRRBaseTest):
     testfile2_path = self.CreateFile("some_dir/testfile2")
     collection_path = self.client_id.Add("Results")
     self.CreateCollection(collection_path, [testfile1_path, testfile2_path])
-
+    data_store.DB.Flush()
     plugin = collection_files_plugin.CollectionFilesExportPlugin()
     parser = argparse.ArgumentParser()
     plugin.ConfigureArgParser(parser)

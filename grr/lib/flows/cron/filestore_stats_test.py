@@ -2,6 +2,7 @@
 """Tests for grr.lib.flows.cron.filestore_stats."""
 
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import test_lib
 from grr.lib.aff4_objects import filestore as aff4_filestore
@@ -43,6 +44,7 @@ class FilestoreStatsCronFlowTest(test_lib.FlowTestsBaseclass):
       newfd.size = 12
 
     fs.AddURNToIndex("blobtiny", "aff4:/C.0000000000000001/fs/os/1")
+    data_store.DB.Flush()
 
   def testFileTypes(self):
     for _ in test_lib.TestFlowHelper(

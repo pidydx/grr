@@ -10,6 +10,7 @@ from grr.gui.api_plugins import artifact as artifact_plugin
 from grr.lib import artifact
 from grr.lib import artifact_registry
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import test_lib
 
@@ -70,6 +71,7 @@ class ApiDeleteArtifactsHandlerTest(api_test_lib.ApiCallHandlerTest):
                                        "artifacts", "test_artifacts.json")
     with open(test_artifacts_file, "rb") as fd:
       artifact.UploadArtifactYamlFile(fd.read(), token=self.token)
+    data_store.DB.Flush()
 
   def testDeletesArtifactsWithSpecifiedNames(self):
     self.UploadTestArtifacts()

@@ -9,6 +9,7 @@ from grr.gui.api_plugins import cron as cron_plugin
 from grr.gui.api_plugins import cron_test as cron_plugin_test
 
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import rdfvalue
 from grr.lib import test_lib
@@ -82,6 +83,7 @@ class ApiCreateCronJobHandlerRegressionTest(
   def Run(self):
 
     def ReplaceCronJobUrn():
+      data_store.DB.Flush()
       jobs = list(cronjobs.CRON_MANAGER.ListJobs(token=self.token))
       return {jobs[0].Basename(): "CreateAndRunGeneicHuntFlow_1234"}
 
@@ -124,13 +126,14 @@ class ApiListCronJobFlowsHandlerRegressionTest(
       cron_args.flow_runner_args.flow_name = self.flow_name
       cronjobs.CRON_MANAGER.ScheduleFlow(
           cron_args, job_name=self.flow_name, token=self.token)
-
+      data_store.DB.Flush()
       cronjobs.CRON_MANAGER.RunOnce(token=self.token)
 
+
   def _GetFlowId(self):
+    cronjobs.CRON_MANAGER.ListJobs(token=self.token)
     cron_job_urn = list(cronjobs.CRON_MANAGER.ListJobs(token=self.token))[0]
     cron_job = aff4.FACTORY.Open(cron_job_urn, token=self.token)
-
     cron_job_flow_urn = list(cron_job.ListChildren())[0]
 
     return cron_job_flow_urn.Basename()
@@ -162,7 +165,7 @@ class ApiGetCronJobFlowHandlerRegressionTest(
       cron_args.flow_runner_args.flow_name = self.flow_name
       cronjobs.CRON_MANAGER.ScheduleFlow(
           cron_args, job_name=self.flow_name, token=self.token)
-
+      data_store.DB.Flush()
       cronjobs.CRON_MANAGER.RunOnce(token=self.token)
 
   def _GetFlowId(self):

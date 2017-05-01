@@ -4,6 +4,7 @@
 
 
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import flow
 from grr.lib import test_lib
@@ -25,7 +26,7 @@ class PackedVersionedCollectionCompactorTest(test_lib.FlowTestsBaseclass):
         mode="w",
         token=self.token) as fd:
       fd.Add(rdf_flows.GrrMessage(request_id=1))
-
+    data_store.DB.Flush()
     # Collection is not compacted, so recorded size is 0.
     fd = aff4.FACTORY.Open("aff4:/tmp/coll", token=self.token)
     self.assertEqual(fd.Get(fd.Schema.SIZE), 0)
@@ -46,7 +47,7 @@ class PackedVersionedCollectionCompactorTest(test_lib.FlowTestsBaseclass):
         mode="w",
         token=self.token) as fd:
       fd.Add(rdf_flows.GrrMessage(request_id=1))
-
+    data_store.DB.Flush()
     # Check that there's 1 compaction notification for our collection.
     notifications = collects.PackedVersionedCollection.QueryNotifications(
         token=self.token)
@@ -73,6 +74,7 @@ class PackedVersionedCollectionCompactorTest(test_lib.FlowTestsBaseclass):
           mode="w",
           token=self.token) as fd:
         fd.Add(rdf_flows.GrrMessage(request_id=1))
+      data_store.DB.Flush()
 
     AddNewElementToCollection()
 
@@ -115,7 +117,7 @@ class PackedVersionedCollectionCompactorTest(test_lib.FlowTestsBaseclass):
         mode="w",
         token=self.token) as fd:
       fd.Add(rdf_flows.GrrMessage(request_id=1))
-
+    data_store.DB.Flush()
     # Collection is not compacted, so recorded size is 0 for both collections.
     fd = aff4.FACTORY.Open("aff4:/tmp/coll1", token=self.token)
     self.assertEqual(fd.Get(fd.Schema.SIZE), 0)
@@ -142,7 +144,7 @@ class PackedVersionedCollectionCompactorTest(test_lib.FlowTestsBaseclass):
         mode="w",
         token=self.token) as fd:
       fd.Add(rdf_flows.GrrMessage(request_id=1))
-
+    data_store.DB.Flush()
     # Collection is not compacted, so recorded size is 0.
     fd = aff4.FACTORY.Open("aff4:/tmp/coll", token=self.token)
     self.assertEqual(fd.Get(fd.Schema.SIZE), 0)

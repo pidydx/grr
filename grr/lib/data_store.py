@@ -39,7 +39,6 @@ import abc
 import atexit
 import sys
 import time
-
 import logging
 
 from grr.lib import access_control
@@ -50,6 +49,7 @@ from grr.lib import rdfvalue
 from grr.lib import registry
 from grr.lib import stats
 from grr.lib import utils
+from grr.lib.rdfvalues import flows as rdf_flows
 
 flags.DEFINE_bool("list_storage", False, "List all storage subsystems present.")
 
@@ -114,7 +114,19 @@ class MutationPool(object):
     self.token = token
     self.delete_subject_requests = []
     self.set_requests = []
+    self.to_write_notifications = []
+    self.to_write_tasks = []
+    self.to_delete_tasks = []
+    self.to_write_responses = []
+    self.to_write_requests = []
+    self.to_delete_requests = []
+    self.to_write_collection_items = []
+    self.to_write_collection_types = []
+    self.to_write_collection_indexes = []
     self.delete_attributes_requests = []
+    self.to_update_queue_item_leases = []
+    self.to_write_aff4_indexes = []
+    self.to_delete_aff4_indexes = []
 
   def DeleteSubjects(self, subjects):
     self.delete_subject_requests.extend(subjects)
@@ -163,13 +175,101 @@ class MutationPool(object):
           token=self.token,
           sync=False)
 
-    if (self.delete_subject_requests or self.delete_attributes_requests or
-        self.set_requests):
-      DB.Flush()
+    for req in self.to_write_notifications:
+      queue, values = req
+      DB.CreateNotifications(
+          queue,
+          values,
+          token=self.token,
+          sync=False)
+
+    for req in self.to_write_tasks:
+      queue, values, timestamp = req
+      DB.CreateTasks(
+          queue,
+          values,
+          timestamp=timestamp,
+          token=self.token,
+          sync=False)
+
+    for req in self.to_delete_tasks:
+      queue, values = req
+      DB.DeleteTasks(
+          queue,
+          values,
+          token=self.token,
+          sync=False)
+
+    for req in self.to_write_responses:
+      session_id, values = req
+      DB.CreateResponses(
+          session_id,
+          values,
+          token=self.token,
+          sync=False)
+
+    for req in self.to_write_requests:
+      session_id, values = req
+      DB.CreateRequests(
+          session_id,
+          values,
+          token=self.token,
+          sync=False)
+
+    for req in self.to_delete_requests:
+      session_id, values = req
+      DB.DeleteRequests(
+          session_id,
+          values,
+          token=self.token,
+          sync=False)
+
+    for req in self.to_write_collection_items:
+      collection_id, rdf_value, timestamp, suffix = req
+      DB.CreateCollectionItem(collection_id,
+                              rdf_value,
+                              timestamp,
+                              suffix,
+                              token=self.token,
+                              sync=False)
+
+    for req in self.to_write_collection_types:
+      collection_id, collection_type = req
+      DB.CreateMultiTypeCollectionEntry(collection_id, collection_type, token=self.token, sync=False)
+
+    for req in self.to_write_collection_indexes:
+      collection_id, idx, timestamp, suffix = req
+      DB.CreateCollectionIndexEntry(collection_id, idx, timestamp, suffix, token=self.token, sync=False)
+
+    for req in self.to_update_queue_item_leases:
+      records, lease_expiration = req
+      DB.UpdateQueueItemLeases(records, lease_expiration, token=self.token, sync=False)
+      
+    for req in self.to_write_aff4_indexes:
+      parent_urn, child_urn = req
+      DB.CreateAFF4Index(parent_urn, child_urn, token=self.token, sync=False)
+
+    for req in self.to_delete_aff4_indexes:
+      dirname, child_dir = req
+      DB.DeleteAFF4Index(dirname, child_dir, token=self.token, sync=False)
+
+    DB.Flush()
 
     self.delete_subject_requests = []
     self.set_requests = []
+    self.to_write_notifications = []
+    self.to_write_tasks = []
+    self.to_delete_tasks = []
+    self.to_write_responses = []
+    self.to_write_requests = []
+    self.to_delete_requests = []
+    self.to_write_collection_items = []
+    self.to_write_collection_types = []
+    self.to_write_collection_indexes = []
     self.delete_attributes_requests = []
+    self.to_update_queue_item_leases = []
+    self.to_write_aff4_indexes = []
+    self.to_delete_aff4_indexes = []
 
   def __enter__(self):
     return self
@@ -178,9 +278,70 @@ class MutationPool(object):
     self.Flush()
 
   def Size(self):
-    return (len(self.delete_subject_requests) + len(self.set_requests) +
-            len(self.delete_attributes_requests))
+    return (len(self.delete_subject_requests) +
+            len(self.delete_attributes_requests) +
+            len(self.set_requests) +
+            len(self.to_write_notifications) +
+            len(self.to_write_tasks) +
+            len(self.to_delete_tasks) +
+            len(self.to_write_responses) +
+            len(self.to_write_requests) +
+            len(self.to_delete_requests) +
+            len(self.to_write_collection_items) +
+            len(self.to_write_collection_types) +
+            len(self.to_write_collection_indexes) +
+            len(self.to_update_queue_item_leases) +
+            len(self.to_write_aff4_indexes)+
+            len(self.to_delete_aff4_indexes))
 
+  def CreateNotifications(self,
+               queue,
+               values):
+    self.to_write_notifications.append((queue, values))
+
+  def CreateTasks(self,
+               queue,
+               values,
+               timestamp):
+    self.to_write_tasks.append((queue, values, timestamp))
+
+  def CreateResponses(self,
+               session_id,
+               values):
+    self.to_write_responses.append((session_id, values))
+
+  def CreateRequests(self,
+               session_id,
+               values):
+    self.to_write_requests.append((session_id, values))
+
+  def DeleteTasks(self,
+               queue,
+               values):
+    self.to_delete_tasks.append((queue, values))
+
+  def DeleteRequests(self,
+                  session_id,
+                  values):
+    self.to_delete_requests.append((session_id, values))
+
+  def CreateCollectionItem(self, collection_id, rdf_value, timestamp, suffix=None, replace=True):
+    self.to_write_collection_items.append((collection_id, rdf_value, timestamp, suffix))
+
+  def CreateMultiTypeCollectionEntry(self, collection_id, collection_type):
+    self.to_write_collection_types.append((collection_id, collection_type))
+
+  def CreateCollectionIndexEntry(self, collection_id, idx, item_timestamp, item_suffix):
+    self.to_write_collection_indexes.append((collection_id, idx, item_timestamp, item_suffix))
+
+  def UpdateQueueItemLeases(self, records, lease_expiration):
+    self.to_update_queue_item_leases.append((records, lease_expiration))
+
+  def CreateAFF4Index(self, parent_urn, child_urn):
+    self.to_write_aff4_indexes.append((parent_urn, child_urn))
+
+  def DeleteAFF4Index(self, parent_urn, child_urn):
+    self.to_delete_aff4_indexes.append((parent_urn, child_urn))
 
 class DataStore(object):
   """Abstract database access."""
@@ -188,10 +349,57 @@ class DataStore(object):
   __metaclass__ = registry.MetaclassRegistry
 
   # Constants relating to timestamps.
+  EMPTY_DATA = "X"
   ALL_TIMESTAMPS = "ALL_TIMESTAMPS"
   NEWEST_TIMESTAMP = "NEWEST_TIMESTAMP"
   TIMESTAMPS = [ALL_TIMESTAMPS, NEWEST_TIMESTAMP]
   LEASE_ATTRIBUTE = "aff4:lease"
+  COLLECTION_ITEM_ATTRIBUTE = "aff4:sequential_value"
+  COLLECTION_VALUE_TYPE_PREFIX = "aff4:value_type_"
+  COLLECTION_VALUE_TYPE_TEMPLATE = COLLECTION_VALUE_TYPE_PREFIX + "%s"
+  NOTIFY_PREDICATE_PREFIX = "notify:"
+  NOTIFY_PREDICATE_TEMPLATE = NOTIFY_PREDICATE_PREFIX + "%s"
+  TASK_PREDICATE_PREFIX = "task:"
+  TASK_PREDICATE_TEMPLATE = TASK_PREDICATE_PREFIX + "%s"
+  COLLECTION_INDEX_ATTRIBUTE_PREFIX = "index:sc_"
+  COLLECTION_INDEX_ATTRIBUTE_TEMPLATE = COLLECTION_INDEX_ATTRIBUTE_PREFIX + "%08x"
+  QUEUE_ITEM_ATTRIBUTE = "aff4:sequential_value"
+  QUEUE_ITEM_LEASE_ATTRIBUTE = "aff4:lease"
+
+  # These attributes are related to a flow's internal data structures Requests
+  # are protobufs of type RequestState. They have a constant prefix followed by
+  # the request number:
+  FLOW_REQUEST_PREFIX = "flow:request:"
+  FLOW_REQUEST_TEMPLATE = FLOW_REQUEST_PREFIX + "%08X"
+
+  # When a status message is received from the client, we write it with the
+  # request using the following template.
+  FLOW_STATUS_PREFIX = "flow:status:"
+  FLOW_STATUS_TEMPLATE = FLOW_STATUS_PREFIX + "%08X"
+
+  # Each request may have any number of responses. Responses are kept in their
+  # own subject object. The subject name is derived from the session id.
+  FLOW_RESPONSE_PREFIX = "flow:response:"
+  FLOW_RESPONSE_TEMPLATE = FLOW_RESPONSE_PREFIX + "%08X:%08X"
+
+  STATS_STORE_PREFIX = "aff4:stats_store/"
+
+  VERSIONED_COLLECTION_NOTIFICATION_QUEUE = "aff4:/cron/versioned_collection_compactor"
+  VERSIONED_COLLECTION_NOTIFICATION_PREFIX = "index:changed/"
+  VERSIONED_COLLECTION_NOTIFICATION_TEMPLATE = VERSIONED_COLLECTION_NOTIFICATION_PREFIX + "%s"
+
+  HASH_INDEX_PREFIX = "index:target:"
+  HASH_INDEX_TEMPLATE = HASH_INDEX_PREFIX + "%s"
+
+  AFF4_INDEX_PREFIX = "index:dir/"
+  AFF4_INDEX_TEMPLATE = AFF4_INDEX_PREFIX + "%s"
+
+  LABEL_PREFIX = "index:label_"
+  LABEL_TEMPLATE = LABEL_PREFIX + "%s"
+
+  CLIENT_INDEX_URN = rdfvalue.RDFURN("aff4:/client_index")
+  KEYWORD_INDEX_PREFIX = "kw_index:"
+  KEYWORD_INDEX_TEMPLATE = KEYWORD_INDEX_PREFIX + "%s"
 
   mutation_pool_cls = MutationPool
 
@@ -272,6 +480,14 @@ class DataStore(object):
   def Initialize(self):
     """Initialization of the datastore."""
     self.InitializeBlobstore()
+
+  def Clear(self):
+    """Resets datastore to empty state"""
+    pass
+
+  def Destroy(self):
+    """More complete teardown of datastore resources than Clear"""
+    pass
 
   @abc.abstractmethod
   def DeleteSubject(self, subject, sync=False, token=None):
@@ -672,6 +888,327 @@ class DataStore(object):
 
   def GetMutationPool(self, token=None):
     return self.mutation_pool_cls(token=token)
+
+  def CreateNotifications(self, queue, notifications, sync=True, token=None):
+    values = {}
+    for session_id, notification_queue in notifications.items():
+      values[self.NOTIFY_PREDICATE_TEMPLATE % session_id] = [(notification.SerializeToString(), timestamp) for notification, timestamp in notification_queue]
+    self.MultiSet(queue, values, sync=sync, replace=False, token=token)
+
+  def ReadNotifications(self, queue, timestamp, limit=None, token=None):
+    for predicate, serialized_notification, ts in self.ResolvePrefix(queue, self.NOTIFY_PREDICATE_PREFIX, timestamp=timestamp, limit=limit, token=token):
+      session_id = predicate[len(self.NOTIFY_PREDICATE_PREFIX):]
+      # Parse the notification.
+      try:
+        notification = rdf_flows.GrrNotification.FromSerializedString(serialized_notification)
+      except Exception:  # pylint: disable=broad-except
+        logging.exception("Can't unserialize notification, deleting it: "
+                          "session_id=%s, ts=%d", session_id, ts)
+        self.data_store.DeleteNotifications(
+            queue,
+            [session_id],
+            token=self.token,
+            # Make the time range narrow, but be sure to include the needed
+            # notification.
+            start=ts,
+            end=ts,
+            sync=True)
+        continue
+      yield (session_id, notification, ts)
+
+  def DeleteNotifications(self, queue, session_ids, start=None, end=None, sync=True, token=None):
+    self.DeleteAttributes(queue, [self.NOTIFY_PREDICATE_TEMPLATE % session_id for session_id in session_ids], start=start, end=end, sync=sync, token=token)
+
+  def CreateTasks(self, queue, task_queue, timestamp, sync=True, token=None):
+    values = {}
+    for task_id, tasks in task_queue.items():
+      values[self.TASK_PREDICATE_TEMPLATE % task_id] = [task.SerializeToString() for task in tasks]
+    self.MultiSet(queue, values, timestamp=timestamp, sync=sync, replace=True, token=token)
+
+  def ReadTasks(self, queue, task_id=None, timestamp=None, limit=None, token=None):
+    tasks = []
+    if task_id is None:
+      prefix = self.TASK_PREDICATE_PREFIX
+    else:
+      prefix = self.TASK_PREDICATE_TEMPLATE % utils.SmartStr(task_id)
+
+    for _, serialized_task, ts in self.ResolvePrefix(queue, prefix, timestamp=timestamp, limit=limit, token=token):
+      tasks.append((rdf_flows.GrrMessage.FromSerializedString(serialized_task), ts))
+    return sorted(tasks, reverse=True, key=lambda task: task[0].priority)
+
+  def DeleteTasks(self, queue, task_ids, sync=True, token=None):
+    self.DeleteAttributes(queue, [self.TASK_PREDICATE_TEMPLATE % task_id for task_id in task_ids], sync=sync, token=token)
+
+  def CreateResponses(self, session_id, responses, replace=True, sync=True, token=None):
+    status_values = {}
+    response_values = {}
+    for response, timestamp in responses:
+      serialized_response = response.SerializeToString()
+      if response.type == rdf_flows.GrrMessage.Type.STATUS:
+        status_values.setdefault(self.FLOW_STATUS_TEMPLATE % response.request_id, []).append((serialized_response, timestamp))
+      response_subject = session_id.Add("state/request:%08X" % response.request_id)
+      response_values.setdefault(response_subject, {}).setdefault(self.FLOW_RESPONSE_TEMPLATE % (response.request_id, response.response_id), []).append((serialized_response, timestamp))
+    status_subject = session_id.Add("state")
+    for response_subject, values in response_values.items():
+      self.MultiSet(response_subject, values, sync=sync, replace=replace, token=token)
+    self.MultiSet(status_subject, status_values, sync=sync, replace=replace, token=token)
+
+  def ReadStatuses(self, session_id, timestamp=None, limit=None, token=None):
+    subject = session_id.Add("state")
+    for _, serialized_status, ts in self.ResolvePrefix(subject, self.FLOW_STATUS_PREFIX, timestamp=timestamp, limit=limit, token=token):
+      yield (rdf_flows.GrrMessage.FromSerializedString(serialized_status), ts)
+
+  def ReadResponses(self, session_id, request_id, timestamp=None, limit=None, token=None):
+    subject = session_id.Add("state/request:%08X" % request_id)
+    for _, serialized_response, ts in self.ResolvePrefix(subject, self.FLOW_RESPONSE_PREFIX, timestamp=timestamp, limit=limit, token=token):
+      yield (rdf_flows.GrrMessage.FromSerializedString(serialized_response), ts)
+
+  def DeleteResponses(self, session_id, request_id, responses=None, sync=False, token=None):
+    response_subject = session_id.Add("state/request:%08X" % request_id)
+    status_subject = session_id.Add("state")
+    if responses:
+      self.DeleteAttributes(response_subject, [self.FLOW_RESPONSE_TEMPLATE % (request_id, response.response_id) for response in responses], sync=sync, token=token)
+      self.DeleteAttributes(status_subject, [self.FLOW_STATUS_TEMPLATE % response.request_id for response in responses if response.type == rdf_flows.GrrMessage.Type.STATUS], sync=sync, token=token)
+    else:
+      self.DeleteSubject(response_subject, sync=sync, token=token)
+      self.DeleteAttributes(status_subject, [self.FLOW_STATUS_TEMPLATE % request_id], sync=sync, token=token)
+
+  def CreateRequests(self, session_id, requests, replace=True, sync=True, token=None):
+    subject = session_id.Add("state")
+    request_values = {}
+    for request, timestamp in requests:
+      serialized_request = request.SerializeToString()
+      request_values.setdefault(self.FLOW_REQUEST_TEMPLATE % request.id, []).append((serialized_request, timestamp))
+    self.MultiSet(subject, request_values, sync=sync, replace=replace, token=token)
+
+  def ReadRequests(self, session_id, timestamp=None, limit=None, token=None):
+    subject = session_id.Add("state")
+    for _, serialized_request, ts in self.ResolvePrefix(subject, [self.FLOW_REQUEST_PREFIX], limit=limit, timestamp=timestamp, token=token):
+      yield (rdf_flows.RequestState.FromSerializedString(serialized_request), ts)
+
+  def DeleteRequests(self, session_id, requests, sync=False, token=None):
+    subject = session_id.Add("state")
+    self.DeleteAttributes(subject, [self.FLOW_REQUEST_TEMPLATE % request.id for request in requests], sync=sync, token=token)
+
+  def CreateCollectionItem(self, collection_id, rdf_value, timestamp, suffix=None, token=None, replace=True, sync=True):
+    item_subject = collection_id.Add("Results").Add("%016x.%06x" % (timestamp, suffix))
+
+    self.Set(item_subject, self.COLLECTION_ITEM_ATTRIBUTE, rdf_value.SerializeToString(), timestamp=timestamp, token=token, replace=replace, sync=sync)
+
+  def ReadCollectionItems(self, collection_id, timestamps, rdf_type, token=None):
+    subjects = [collection_id.Add("Results").Add("%016x.%06x" % (timestamp, suffix)) for timestamp, suffix in timestamps]
+    for _, results in self.MultiResolvePrefix(subjects, self.COLLECTION_ITEM_ATTRIBUTE, token=token):
+      for _, serialized_rdf_value, timestamp in results:
+        yield (rdf_type.FromSerializedString(serialized_rdf_value), timestamp)
+
+  def DeleteCollection(self, collection_id, token=None):
+    mutation_pool = self.GetMutationPool(token)
+    mutation_pool.DeleteSubject(collection_id)
+    for subject, _, _ in self.ScanAttribute(collection_id, self.COLLECTION_ITEM_ATTRIBUTE, token=token):
+      mutation_pool.DeleteSubject(subject)
+      if mutation_pool.Size() > 50000:
+        mutation_pool.Flush()
+    mutation_pool.Flush()
+
+  def ScanCollectionItems(self, collection_id, rdf_type, after_timestamp=None, after_suffix=None, limit=None, token=None):
+    if after_timestamp and after_suffix:
+      after_urn = utils.SmartStr(collection_id.Add("Results").Add("%016x.%06x" % (after_timestamp, after_suffix)))
+    else:
+      after_urn = None
+
+    for subject, timestamp, serialized_rdf_value in self.ScanAttribute(
+        collection_id.Add("Results"),
+        self.COLLECTION_ITEM_ATTRIBUTE,
+        after_urn=after_urn,
+        max_records=limit,
+        token=token):
+      suffix = int(subject[-6:], 16)
+      yield (rdf_type.FromSerializedString(serialized_rdf_value), timestamp, suffix)
+
+  def CreateMultiTypeCollectionEntry(self, collection_id, collection_type, sync=True, token=None):
+    self.Set(collection_id, self.COLLECTION_VALUE_TYPE_TEMPLATE % collection_type, 1, timestamp=0, token=token, sync=sync, replace=True)
+
+  def ReadMultiTypeCollectionEntries(self, collection_id, token=None):
+    return [attribute[len(self.COLLECTION_VALUE_TYPE_PREFIX):] for attribute, _, _ in self.ResolvePrefix(collection_id, self.COLLECTION_VALUE_TYPE_PREFIX, token=token)]
+
+  def CreateCollectionIndexEntry(self, collection_id, idx, item_timestamp, item_suffix, sync=False, token=None):
+    self.Set(collection_id, self.COLLECTION_INDEX_ATTRIBUTE_TEMPLATE % idx, "%06x" % item_suffix, timestamp=item_timestamp, token=token, sync=sync, replace=True)
+
+  def ReadCollectionIndexEntries(self, collection_id, token=None):
+    for (attribute, value, timestamp) in self.ResolvePrefix(collection_id, self.COLLECTION_INDEX_ATTRIBUTE_PREFIX, token=token):
+      yield (int(attribute[len(self.COLLECTION_INDEX_ATTRIBUTE_PREFIX):], 16), timestamp, int(value, 16))
+
+  def CreateQueueItem(self, queue, rdf_value, timestamp, suffix=None, token=None, replace=True, sync=True):
+    item_subject = queue.Add("Records").Add("%016x.%06x" % (timestamp, suffix))
+
+    self.Set(item_subject, self.QUEUE_ITEM_ATTRIBUTE, rdf_value.SerializeToString(), timestamp=timestamp, token=token, replace=replace, sync=sync)
+
+  def ScanQueueItems(self, queue, rdf_type, start_time, limit, token=None):
+    after_urn = None
+    if start_time:
+      after_urn = queue.Add("Records").Add("%016x.%06x" % (start_time.AsMicroSecondsFromEpoch(), 0))
+
+    for subject, values in self.ScanAttributes(
+            queue.Add("Records"), [self.QUEUE_ITEM_ATTRIBUTE, self.QUEUE_ITEM_LEASE_ATTRIBUTE],
+            max_records=4 * limit,
+            after_urn=after_urn,
+            token=token):
+      if self.QUEUE_ITEM_ATTRIBUTE not in values:
+        # Unlikely case, but could happen if, say, a thread called RefreshClaims
+        # so late that another thread already deleted the record. Go ahead and
+        # clean this up.
+        self.DeleteAttributes(
+          subject, [self.QUEUE_ITEM_LEASE_ATTRIBUTE], token=token)
+        continue
+      if self.QUEUE_ITEM_LEASE_ATTRIBUTE in values:
+        lease_expiration = rdfvalue.RDFDatetime.FromSerializedString(values[self.QUEUE_ITEM_LEASE_ATTRIBUTE][1])
+      else:
+        lease_expiration = 0
+      suffix = int(subject[-6:], 16)
+      yield (rdf_type.FromSerializedString(values[self.QUEUE_ITEM_ATTRIBUTE][1]), values[self.QUEUE_ITEM_ATTRIBUTE][0], suffix, lease_expiration)
+
+  def UpdateQueueItemLeases(self, records, lease_expiration, sync=False, token=None):
+      for queue, timestamp, suffix in records:
+        subject = queue.Add("Records").Add("%016x.%06x" % (timestamp, suffix))
+        self.Set(subject, self.QUEUE_ITEM_LEASE_ATTRIBUTE, lease_expiration, token=token)
+
+  def DeleteQueueItems(self, records, sync=True, token=None):
+    subjects = [queue.Add("Records").Add("%016x.%06x" % (timestamp, suffix)) for queue, timestamp, suffix in records]
+    self.MultiDeleteAttributes(
+      subjects, [self.QUEUE_ITEM_LEASE_ATTRIBUTE, self.QUEUE_ITEM_ATTRIBUTE], sync=sync, token=token)
+
+  def CreateStats(self, process_stats_store, stats, timestamp, sync=False, token=None):
+    to_set = { self.STATS_STORE_PREFIX + name: value for name, value in stats.items()}
+    self.MultiSet(process_stats_store, to_set, replace=False, token=token, timestamp=timestamp, sync=sync)
+
+  def ReadStats(self, process_stats_stores, metric_name=None, timestamp=None, limit=None, token=None):
+    multi_query_results = self.MultiResolvePrefix(
+        process_stats_stores,
+        self.STATS_STORE_PREFIX + (metric_name or ""),
+        token=token,
+        timestamp=timestamp,
+        limit=limit)
+    results = {}
+    for process_stats_store, subject_results in multi_query_results:
+      process_stats_store = rdfvalue.RDFURN(process_stats_store)
+      subject_results = sorted(subject_results, key=lambda x: x[2])
+      for predicate, value_string, timestamp in subject_results:
+        metric_name = predicate[len(self.STATS_STORE_PREFIX):]
+        results.setdefault(process_stats_store.Basename(), []).append((metric_name, value_string, timestamp))
+    return results
+
+  def DeleteStats(self, process_stats_store, metric_names, start=None, end=None, sync=False, token=None):
+      predicates = [self.STATS_STORE_PREFIX + metric_name for metric_name in metric_names]
+      self.DeleteAttributes(process_stats_store, predicates, start=start, end=end, token=token, sync=sync)
+
+  def ReadVersionedCollectionNotifications(self, timestamp, token=None):
+    for _, urn, urn_timestamp in self.ResolvePrefix(
+        self.VERSIONED_COLLECTION_NOTIFICATION_QUEUE,
+        self.VERSIONED_COLLECTION_NOTIFICATION_PREFIX,
+        timestamp=timestamp,
+        token=token):
+      yield rdfvalue.RDFURN(urn, age=urn_timestamp)
+
+  def CreateVersionedCollectionNotification(self, urn, timestamp=None, sync=False, token=None):
+    self.Set(self.VERSIONED_COLLECTION_NOTIFICATION_QUEUE,
+             self.VERSIONED_COLLECTION_NOTIFICATION_TEMPLATE % urn,
+             urn,
+             timestamp=timestamp,
+             replace=True,
+             token=token,
+             sync=sync)
+
+  def DeleteVersionedCollectionNotifications(self, urn, end=None, sync=True, token=None):
+    self.DeleteAttributes(
+        self.VERSIONED_COLLECTION_NOTIFICATION_QUEUE, [self.VERSIONED_COLLECTION_NOTIFICATION_TEMPLATE % urn], end=end, token=token, sync=sync)
+
+  def CreateLabels(self, urn, labels, sync=False, token=None):
+    attributes = [self.LABEL_TEMPLATE % label for label in labels]
+    to_set = dict(zip(attributes, self.EMPTY_DATA * len(attributes)))
+    self.MultiSet(urn, to_set, timestamp=0, token=token, replace=True, sync=sync)
+
+  def ReadLabels(self, urn, token=None):
+    result = []
+    for attribute, _, _ in self.ResolvePrefix(urn, self.LABEL_PREFIX, token=token):
+      result.append(attribute[len(self.LABEL_PREFIX):])
+    return sorted(result)
+
+  def DeleteLabels(self, urn, labels, sync=False, token=None):
+    attributes = [self.LABEL_TEMPLATE % label for label in labels]
+    self.DeleteAttributes(urn, attributes, sync=sync, token=token)
+
+  def CreateHashIndex(self, hash_urn, file_urn, timestamp=None, sync=False, token=None):
+    predicate = (self.HASH_INDEX_TEMPLATE % file_urn).lower()
+    self.MultiSet(hash_urn, {predicate: [file_urn]}, timestamp=timestamp, token=token, replace=True, sync=sync)
+
+  def ReadHashIndex(self, hash_urn, timestamp=None, limit=None, token=None):
+    for _, file_urn, ts in self.ResolvePrefix(hash_urn, self.HASH_INDEX_PREFIX, timestamp=timestamp, limit=limit, token=token):
+      yield file_urn
+
+  def MultiReadHashIndexes(self, hash_urns, timestamp, limit=None, token=None):
+    for index_urn, file_urns in self.MultiResolvePrefix(hash_urns, self.HASH_INDEX_PREFIX, timestamp=timestamp, limit=limit, token=token):
+      yield index_urn, [file_urn for _, file_urn, _ in file_urns]
+
+  def CreateAFF4Index(self, parent_urn, child_urn, timestamp=None, sync=False, token=None):
+    attributes = {self.AFF4_INDEX_TEMPLATE % child_urn: [self.EMPTY_DATA]}
+    self.MultiSet(parent_urn, attributes, timestamp=timestamp, token=token, replace=True, sync=sync)
+
+  def DeleteAFF4Index(self, parent_urn, child_urn, sync=False, token=None):
+    self.DeleteAttributes(parent_urn, [self.AFF4_INDEX_TEMPLATE % child_urn], sync=sync, token=token)
+
+  def ReadAFF4Index(self, parent_urn, timestamp, limit=None, token=None):
+    for predicate, _, timestamp in self.ResolvePrefix(
+            parent_urn,
+        self.AFF4_INDEX_PREFIX,
+        token=token,
+        timestamp=timestamp,
+        limit=limit):
+      child_urn = rdfvalue.RDFURN(parent_urn).Add(predicate[len(self.AFF4_INDEX_PREFIX):])
+      child_urn.age = rdfvalue.RDFDatetime(timestamp)
+      yield child_urn
+
+  def MultiReadAFF4Indexes(self, parent_urns, timestamp, limit=None, token=None):
+    for parent_urn, values in self.MultiResolvePrefix(
+        parent_urns,
+        self.AFF4_INDEX_PREFIX,
+        token=token,
+        timestamp=timestamp,
+        limit=limit):
+
+      child_urns = []
+      for predicate, _, timestamp in values:
+        child_urn = rdfvalue.RDFURN(parent_urn).Add(predicate[len(self.AFF4_INDEX_PREFIX):])
+        child_urn.age = rdfvalue.RDFDatetime(timestamp)
+        child_urns.append(child_urn)
+
+      yield parent_urn, child_urns
+
+  def CreateKeywordsIndex(self, name, keywords, timestamp=None, sync=True, token=None):
+    for keyword in set(keywords):
+      self.Set(self.CLIENT_INDEX_URN.Add(keyword),
+               self.KEYWORD_INDEX_TEMPLATE % name,
+               self.EMPTY_DATA,
+               token=token,
+               sync=sync,
+               timestamp=timestamp)
+
+  def DeleteKeywordsIndex(self, name, keywords, sync=True, token=None):
+    for keyword in set(keywords):
+      self.DeleteAttributes(self.CLIENT_INDEX_URN.Add(keyword), [self.KEYWORD_INDEX_TEMPLATE % name],
+            token=token,
+            sync=sync)
+
+  def MultiReadKeywordsIndex(self, keywords, timestamp, token=None):
+    keyword_urns = {self.CLIENT_INDEX_URN.Add(keyword): keyword for keyword in keywords}
+    for keyword_urn, values in self.MultiResolvePrefix(
+            keyword_urns.keys(),
+            self.KEYWORD_INDEX_PREFIX,
+            timestamp=timestamp,
+            token=token):
+      names = []
+      for predicate, _, ts in values:
+        names.append((predicate[len(self.KEYWORD_INDEX_PREFIX):], ts))
+      yield keyword_urns[keyword_urn], names
 
 
 class DBSubjectLock(object):

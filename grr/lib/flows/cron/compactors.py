@@ -34,7 +34,7 @@ class PackedVersionedCollectionCompactor(cronjobs.SystemCronFlow):
     for urn in collects.PackedVersionedCollection.QueryNotifications(
         timestamp=freeze_timestamp, token=self.token):
       collects.PackedVersionedCollection.DeleteNotifications(
-          [urn], end=urn.age, token=self.token)
+          urn, end=urn.age, token=self.token)
 
       self.HeartBeat()
       try:

@@ -933,54 +933,40 @@ class ApiListHuntClientsHandler(api_call_handler_base.ApiCallHandler):
     waitingfor = {}
     status_by_request = {}
 
-    for flow_urn in flow_requests:
-      for obj in flow_requests[flow_urn]:
-        if isinstance(obj, rdf_flows.RequestState):
-          waitingfor.setdefault(flow_urn, obj)
-          if waitingfor[flow_urn].id > obj.id:
-            waitingfor[flow_urn] = obj
-        elif isinstance(obj, rdf_flows.GrrMessage):
-          status_by_request.setdefault(flow_urn, {})[obj.request_id] = obj
+    for flow_urn, requests in flow_requests.items():
+      for request in requests:
+        waitingfor.setdefault(flow_urn, request)
+        if waitingfor[flow_urn].id > request.id:
+          waitingfor[flow_urn] = request
 
-    response_urns = []
-
-    for request_base_urn, request in waitingfor.iteritems():
-      response_urns.append(
-          rdfvalue.RDFURN(request_base_urn).Add("request:%08X" % request.id))
-
-    response_dict = dict(
-        data_store.DB.MultiResolvePrefix(response_urns, "flow:", token=token))
+      for status, _ in data_store.DB.ReadStatuses(flow_urn, token=token):
+        status_by_request.setdefault(flow_urn, {})[status.request_id] = status
 
     for flow_urn in sorted(all_flow_urns):
-      request_urn = flow_urn.Add("state")
       client_id = flow_urn.Split()[2]
 
-      try:
-        request_obj = waitingfor[request_urn]
-      except KeyError:
-        request_obj = None
+      request = waitingfor.get(flow_urn, None)
 
-      if request_obj:
-        response_urn = rdfvalue.RDFURN(request_urn).Add("request:%08X" %
-                                                        request_obj.id)
-        responses_available = len(response_dict.setdefault(response_urn, []))
+      if request:
+        responses_available = len(list(data_store.DB.ReadResponses(request.session_id, request.id, token=token)))
         status_available = False
         responses_expected = "Unknown"
-        if request_obj.id in status_by_request.setdefault(request_urn, {}):
+
+        if request.id in status_by_request.setdefault(flow_urn, {}):
           status_available = True
-          status = status_by_request[request_urn][request_obj.id]
+          status = status_by_request[flow_urn][request.id]
           responses_expected = status.response_id
 
         client_requests_available = 0
         for client_req in client_requests.setdefault(client_id, []):
-          if request_obj.request.session_id == client_req.session_id:
+          if request.request.session_id == client_req.session_id:
             client_requests_available += 1
 
         pending_request = ApiHuntClientPendingRequest(
             flow_urn=flow_urn,
-            incomplete_request_id=str(request_obj.id),
-            next_state=request_obj.next_state,
-            expected_args=request_obj.request.args_rdf_name,
+            incomplete_request_id=str(request.id),
+            next_state=request.next_state,
+            expected_args=request.request.args_rdf_name,
             available_responses_count=responses_available,
             expected_responses=responses_expected,
             is_status_available=status_available,

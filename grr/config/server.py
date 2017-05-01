@@ -55,6 +55,10 @@ config_lib.DEFINE_integer("Worker.queue_shards", 5,
                           "Queue notifications will be sharded across "
                           "this number of datastore subjects.")
 
+config_lib.DEFINE_integer("Worker.max_notifications", 10000,
+                          "Max queue notifications to be retrieved "
+                          "at a time.")
+
 config_lib.DEFINE_integer("Worker.notification_expiry_time", 600,
                           "The queue manager expires stale notifications "
                           "after this many seconds.")

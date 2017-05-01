@@ -431,19 +431,10 @@ class PackedVersionedCollection(RDFValueCollection):
   VersionedCollectionCompactor cron job.
   """
 
-  notification_queue = "aff4:/cron/versioned_collection_compactor"
-  index_prefix = "index:changed/"
-  index_format = index_prefix + "%s"
-
   @classmethod
   def ScheduleNotification(cls, urn, sync=False, token=None):
     """Schedule notification for a given urn."""
-    data_store.DB.Set(cls.notification_queue,
-                      cls.index_format % urn,
-                      urn,
-                      replace=True,
-                      token=token,
-                      sync=sync)
+    data_store.DB.CreateVersionedCollectionNotification(urn, sync=sync, token=token)
 
   @classmethod
   def QueryNotifications(cls, timestamp=None, token=None):
@@ -455,23 +446,17 @@ class PackedVersionedCollection(RDFValueCollection):
     if timestamp is None:
       timestamp = rdfvalue.RDFDatetime.Now()
 
-    for _, urn, urn_timestamp in data_store.DB.ResolvePrefix(
-        cls.notification_queue,
-        cls.index_prefix,
-        timestamp=(0, timestamp),
-        token=token):
-      yield rdfvalue.RDFURN(urn, age=urn_timestamp)
+    for urn in data_store.DB.ReadVersionedCollectionNotifications(timestamp=(0, timestamp), token=token):
+      yield urn
 
   @classmethod
-  def DeleteNotifications(cls, urns, end=None, token=None):
-    """Delete notifications for given urns."""
+  def DeleteNotifications(cls, urn, end=None, token=None):
+    """Delete notifications for given urn."""
 
     if token is None:
       raise ValueError("token can't be None")
 
-    predicates = [cls.index_format % urn for urn in urns]
-    data_store.DB.DeleteAttributes(
-        cls.notification_queue, predicates, end=end, token=token, sync=True)
+    data_store.DB.DeleteVersionedCollectionNotifications(urn, end=end, token=token)
 
   @classmethod
   def AddToCollection(cls, collection_urn, rdf_values, sync=True, token=None):

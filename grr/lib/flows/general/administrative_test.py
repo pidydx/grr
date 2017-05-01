@@ -16,6 +16,7 @@ from grr.client.client_actions import standard
 from grr.lib import action_mocks
 from grr.lib import aff4
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import email_alerts
 from grr.lib import events
 from grr.lib import flags
@@ -333,7 +334,7 @@ sys.test_code_ran_here = True
 """
     maintenance_utils.UploadSignedConfigBlob(
         code, aff4_path="aff4:/config/python_hacks/test", token=self.token)
-
+    data_store.DB.Flush()
     for _ in test_lib.TestFlowHelper(
         "ExecutePythonHack",
         client_mock,
@@ -353,7 +354,7 @@ sys.test_code_ran_here = py_args['value']
 """
     maintenance_utils.UploadSignedConfigBlob(
         code, aff4_path="aff4:/config/python_hacks/test", token=self.token)
-
+    data_store.DB.Flush()
     for _ in test_lib.TestFlowHelper(
         "ExecutePythonHack",
         client_mock,
@@ -382,7 +383,7 @@ sys.test_code_ran_here = py_args['value']
         token=self.token)
     user.SetLabels("admin", owner="GRR")
     user.Close()
-
+    data_store.DB.Flush()
     with utils.Stubber(subprocess, "Popen", test_lib.Popen):
       for _ in test_lib.TestFlowHelper(
           "LaunchBinary",
@@ -416,7 +417,7 @@ sys.test_code_ran_here = py_args['value']
 
     maintenance_utils.UploadSignedConfigBlob(
         code, aff4_path=upload_path, limit=100, token=self.token)
-
+    data_store.DB.Flush()
     # Ensure the aff4 collection has many items.
     fd = aff4.FACTORY.Open(upload_path, token=self.token)
 
@@ -434,7 +435,7 @@ sys.test_code_ran_here = py_args['value']
         token=self.token)
     user.SetLabels("admin", owner="GRR")
     user.Close()
-
+    data_store.DB.Flush()
     with utils.Stubber(subprocess, "Popen", test_lib.Popen):
       for _ in test_lib.TestFlowHelper(
           "LaunchBinary",

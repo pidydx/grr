@@ -13,6 +13,7 @@ from grr.gui.api_plugins import vfs as vfs_plugin
 from grr.lib import access_control
 from grr.lib import action_mocks
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import flow
 from grr.lib import rdfvalue
@@ -177,6 +178,7 @@ class ApiListFilesHandlerTest(api_test_lib.ApiCallHandlerTest, VfsTestMixin):
 
   def testHandlerListsFilesAndDirectories(self):
     test_lib.ClientFixture(self.client_id, token=self.token)
+    data_store.DB.Flush()
 
     # Fetch all children of a directory.
     args = vfs_plugin.ApiListFilesArgs(
@@ -190,7 +192,7 @@ class ApiListFilesHandlerTest(api_test_lib.ApiCallHandlerTest, VfsTestMixin):
 
   def testHandlerFiltersDirectoriesIfFlagIsSet(self):
     test_lib.ClientFixture(self.client_id, token=self.token)
-
+    data_store.DB.Flush()
     # Only fetch sub-directories.
     args = vfs_plugin.ApiListFilesArgs(
         client_id=self.client_id,
@@ -654,6 +656,7 @@ class ApiGetVfsTimelineAsCsvHandlerTest(api_test_lib.ApiCallHandlerTest,
     super(ApiGetVfsTimelineAsCsvHandlerTest, self).setUp()
     self.handler = vfs_plugin.ApiGetVfsTimelineAsCsvHandler()
     self.SetupTestTimeline()
+    data_store.DB.Flush()
 
   def testRaisesOnEmptyPath(self):
     args = vfs_plugin.ApiGetVfsTimelineAsCsvArgs(
@@ -748,6 +751,7 @@ class ApiGetVfsFilesArchiveHandlerTest(api_test_lib.ApiCallHandlerTest,
     self.CreateFileVersions(self.client_id, "fs/os/c/Downloads/a.txt")
 
     self.CreateFileVersions(self.client_id, "fs/os/c/b.txt")
+    data_store.DB.Flush()
 
   def testGeneratesZipArchiveWhenPathIsNotPassed(self):
     archive_path1 = "vfs_C_1000000000000000/fs/os/c/Downloads/a.txt"

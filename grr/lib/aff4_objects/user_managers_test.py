@@ -441,6 +441,7 @@ class FullAccessControlManagerIntegrationTest(test_lib.GRRBaseTest):
 
     if admin:
       self.CreateAdminUser("Approver1")
+    data_store.DB.Flush()
 
   def CreateSampleHunt(self):
     """Creats SampleHunt, writes it to the data store and returns it's id."""

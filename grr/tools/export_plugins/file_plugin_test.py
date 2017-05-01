@@ -68,7 +68,7 @@ class FileExportPluginTest(test_lib.GRRBaseTest):
     self.CreateFile("testdir/testdir1/testfile3")
     self.CreateDir("testdir/testdir1/testdir2")
     self.CreateFile("testdir/testdir1/testdir2/testfile4")
-
+    data_store.DB.Flush()
     plugin = file_plugin.FileExportPlugin()
     parser = argparse.ArgumentParser()
     plugin.ConfigureArgParser(parser)

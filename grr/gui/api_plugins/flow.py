@@ -290,7 +290,7 @@ class ApiListFlowRequestsHandler(api_call_handler_base.ApiCallHandler):
         continue
 
       api_request = ApiFlowRequest(
-          request_id=manager.FLOW_REQUEST_TEMPLATE % request.id,
+          request_id=data_store.DB.FLOW_REQUEST_TEMPLATE % request.id,
           request_state=request)
 
       if responses:

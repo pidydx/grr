@@ -30,14 +30,14 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=42, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
-    counter = [x for x in row if x[0] == "aff4:stats_store/counter"]
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
+
+    counter = [x for x in row["some_pid"] if x[0] == "counter"]
     self.assertTrue(counter)
 
     stored_value = stats_store.StatsStoreValue(
         value_type=stats.MetricMetadata.ValueType.INT, int_value=1)
-    self.assertEqual(counter[0], ("aff4:stats_store/counter",
+    self.assertEqual(counter[0], ("counter",
                                   stored_value.SerializeToString(), 42))
 
   def testCountersWithFieldsAreWrittenToDataStore(self):
@@ -48,12 +48,11 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=42, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
     # Check that no plain counter is written.
     values = [
-        stats_store.StatsStoreValue.FromSerializedString(x[1]) for x in row
-        if x[0] == "aff4:stats_store/counter"
+        stats_store.StatsStoreValue.FromSerializedString(x[1]) for x in row["some_pid"]
+        if x[0] == "counter"
     ]
     self.assertEqual(len(values), 2)
 
@@ -84,11 +83,10 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=42, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
     values = [
-        stats_store.StatsStoreValue.FromSerializedString(x[1]) for x in row
-        if x[0] == "aff4:stats_store/foo_event"
+        stats_store.StatsStoreValue.FromSerializedString(x[1]) for x in row["some_pid"]
+        if x[0] == "foo_event"
     ]
     self.assertEqual(len(values), 1)
 
@@ -106,12 +104,11 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=42, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
 
     values = [
-        stats_store.StatsStoreValue.FromSerializedString(x[1]) for x in row
-        if x[0] == "aff4:stats_store/foo_event"
+        stats_store.StatsStoreValue.FromSerializedString(x[1]) for x in row["some_pid"]
+        if x[0] == "foo_event"
     ]
     self.assertEqual(len(values), 2)
 
@@ -143,15 +140,14 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=42, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
-    counter = [x for x in row if x[0] == "aff4:stats_store/str_gauge"]
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
+
+    counter = [x for x in row["some_pid"] if x[0] == "str_gauge"]
     self.assertTrue(counter)
 
     stored_value = stats_store.StatsStoreValue(
         value_type=stats.MetricMetadata.ValueType.STR, str_value="some_value")
-    self.assertEqual(counter[0], ("aff4:stats_store/str_gauge",
-                                  stored_value.SerializeToString(), 42))
+    self.assertEqual(counter[0], ("str_gauge", stored_value.SerializeToString(), 42))
 
   def testIntGaugeValuesAreWrittenToDataStore(self):
     stats.STATS.RegisterGaugeMetric("int_gauge", int)
@@ -160,14 +156,13 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=42, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
-    counter = [x for x in row if x[0] == "aff4:stats_store/int_gauge"]
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
+    counter = [x for x in row["some_pid"] if x[0] == "int_gauge"]
     self.assertTrue(counter)
 
     stored_value = stats_store.StatsStoreValue(
         value_type=stats.MetricMetadata.ValueType.INT, int_value=4242)
-    self.assertEqual(counter[0], ("aff4:stats_store/int_gauge",
+    self.assertEqual(counter[0], ("int_gauge",
                                   stored_value.SerializeToString(), 42))
 
   def testLaterValuesDoNotOverridePrevious(self):
@@ -181,19 +176,18 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
     self.stats_store.WriteStats(
         process_id=self.process_id, timestamp=43, sync=True)
 
-    row = data_store.DB.ResolvePrefix(
-        "aff4:/stats_store/some_pid", "", token=self.token)
-    counters = [x for x in row if x[0] == "aff4:stats_store/counter"]
+    row = data_store.DB.ReadStats(["aff4:/stats_store/some_pid"], token=self.token)
+    counters = [x for x in row["some_pid"] if x[0] == "counter"]
     self.assertEqual(len(counters), 2)
     counters = sorted(counters, key=lambda x: x[2])
 
     stored_value = stats_store.StatsStoreValue(
         value_type=stats.MetricMetadata.ValueType.INT, int_value=1)
-    self.assertEqual(counters[0], ("aff4:stats_store/counter",
+    self.assertEqual(counters[0], ("counter",
                                    stored_value.SerializeToString(), 42))
     stored_value = stats_store.StatsStoreValue(
         value_type=stats.MetricMetadata.ValueType.INT, int_value=2)
-    self.assertEqual(counters[1], ("aff4:stats_store/counter",
+    self.assertEqual(counters[1], ("counter",
                                    stored_value.SerializeToString(), 43))
 
   def testValuesAreFetchedCorrectly(self):
@@ -296,7 +290,7 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
 
     self.stats_store.WriteStats(process_id="pid1", sync=True)
     self.stats_store.WriteStats(process_id="pid2", sync=True)
-
+    data_store.DB.Flush()
     self.assertEqual(
         sorted(self.stats_store.ListUsedProcessIds()), ["pid1", "pid2"])
 
@@ -310,7 +304,7 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
 
     stats.STATS.IncrementCounter("counter")
     self.stats_store.WriteStats(process_id="pid1", timestamp=43, sync=True)
-
+    data_store.DB.Flush()
     results = self.stats_store.MultiReadStats()
     self.assertEqual(sorted(results.keys()), ["pid1", "pid2"])
     self.assertEqual(results["pid1"]["counter"], [(1, 42), (2, 43)])
@@ -326,7 +320,7 @@ class StatsStoreTest(test_lib.AFF4ObjectTest):
 
     stats.STATS.IncrementCounter("counter")
     self.stats_store.WriteStats(process_id="pid1", timestamp=44, sync=True)
-
+    data_store.DB.Flush()
     results = self.stats_store.MultiReadStats(timestamp=(43, 100))
     self.assertEqual(sorted(results.keys()), ["pid1", "pid2"])
     self.assertEqual(results["pid1"]["counter"], [(2, 44)])

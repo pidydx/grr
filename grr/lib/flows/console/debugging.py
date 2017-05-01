@@ -221,7 +221,7 @@ def WakeStuckFlow(session_id):
       # We need to check if there are client requests pending.
       if not checked_pending:
         task = manager.Query(
-            request.client_id, task_id="task:%s" % request.request.task_id)
+            request.client_id, task_id=request.request.task_id)
 
         if task:
           # Client has tasks pending already.

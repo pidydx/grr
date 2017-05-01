@@ -7,6 +7,7 @@ from grr.endtoend_tests import endtoend_mocks
 from grr.lib import action_mocks
 from grr.lib import aff4
 from grr.lib import client_fixture
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import flow
 from grr.lib import test_lib
@@ -43,6 +44,7 @@ class SystemCronFlowTest(test_lib.FlowTestsBaseclass):
           "C.1%015X" % i,
           token=self.token,
           fixture=client_fixture.LINUX_FIXTURE)
+    data_store.DB.Flush()
 
   def _CheckVersionStats(self, label, attribute, counts):
 

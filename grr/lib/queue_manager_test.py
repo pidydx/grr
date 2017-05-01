@@ -88,21 +88,19 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
     completed_requests = list(manager.FetchCompletedRequests(session_id))
     self.assertEqual(len(completed_requests), 3)
 
-    # First completed message is request_id = 2 with 10 responses.
-    self.assertEqual(completed_requests[0][0].id, 2)
+    # First completed message is request_id = 2.
+    self.assertEqual(completed_requests[0].id, 2)
 
-    # Last message is the status message.
-    self.assertEqual(completed_requests[0][-1].type,
-                     rdf_flows.GrrMessage.Type.STATUS)
-    self.assertEqual(completed_requests[0][-1].response_id, 10)
-
-    # Now fetch all the completed responses. Set the limit so we only fetch some
-    # of the responses.
+    # Now fetch all the completed responses.
     completed_response = list(manager.FetchCompletedResponses(session_id))
+
     self.assertEqual(len(completed_response), 3)
     for i, (request, responses) in enumerate(completed_response, 2):
       self.assertEqual(request.id, i)
       self.assertEqual(len(responses), 10)
+      # Last message is the status message with id 10.
+      self.assertEqual(responses[-1].response_id, 10)
+      self.assertEqual(responses[-1].type, rdf_flows.GrrMessage.Type.STATUS)
 
     # Now check if the limit is enforced. The limit refers to the total number
     # of responses to return. We ask for maximum 15 responses, so we should get
@@ -209,15 +207,13 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
     self.assertEqual(all_requests[0][0], request)
 
     # Ensure the rows are in the data store:
-    self.assertEqual(
-        data_store.DB.ResolveRow(
-            session_id.Add("state"), token=self.token)[0][0],
-        "flow:request:00000001")
-
-    self.assertEqual(
-        data_store.DB.ResolveRow(
-            session_id.Add("state/request:00000001"), token=self.token)[0][0],
-        "flow:response:00000001:00000001")
+    request_id = 1
+    response_id = 1
+    request, _ = data_store.DB.ReadRequests(session_id, token=self.token).next()
+    response, _ = data_store.DB.ReadResponses(session_id, request_id, token=self.token).next()
+    self.assertEqual(request.id, request_id)
+    self.assertEqual(response.request_id, request_id)
+    self.assertEqual(response.response_id, response_id)
 
     with queue_manager.QueueManager(token=self.token) as manager:
       manager.DestroyFlowStates(session_id)
@@ -226,13 +222,8 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
     self.assertEqual(len(all_requests), 0)
 
     # Ensure the rows are gone from the data store.
-    self.assertEqual(
-        data_store.DB.ResolveRow(
-            session_id.Add("state/request:00000001"), token=self.token), [])
-
-    self.assertEqual(
-        data_store.DB.ResolveRow(
-            session_id.Add("state"), token=self.token), [])
+    self.assertEqual(list(data_store.DB.ReadRequests(session_id, token=self.token)), [])
+    self.assertEqual(list(data_store.DB.ReadResponses(session_id, request_id, token=self.token)), [])
 
   def testSchedule(self):
     """Test the ability to schedule a task."""
@@ -244,19 +235,16 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
         generate_task_id=True)
     manager = queue_manager.QueueManager(token=self.token)
     manager.Schedule([task])
-
+    manager.Flush()
     self.assertGreater(task.task_id, 0)
     self.assertGreater(task.task_id & 0xffffffff, 0)
     self.assertEqual((long(self._current_mock_time * 1000) & 0xffffffff) << 32,
                      task.task_id
                      & 0x1fffffff00000000)
     self.assertEqual(task.task_ttl, 5)
+    value, ts = data_store.DB.ReadTasks(test_queue, task.task_id, token=self.token)[0]
 
-    value, ts = data_store.DB.Resolve(
-        test_queue, manager._TaskIdToColumn(task.task_id), token=self.token)
-
-    decoded = rdf_flows.GrrMessage.FromSerializedString(value)
-    self.assertRDFValuesEqual(decoded, task)
+    self.assertRDFValuesEqual(value, task)
     self.assertGreater(ts, 0)
 
     # Get a lease on the task
@@ -303,7 +291,7 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
 
     manager = queue_manager.QueueManager(token=self.token)
     manager.Schedule([task])
-
+    manager.Flush()
     # Get a lease on the task
     tasks = manager.QueryAndOwn(test_queue, lease_seconds=100, limit=100)
 
@@ -334,7 +322,7 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
 
     manager = queue_manager.QueueManager(token=self.token)
     manager.Schedule([task])
-
+    manager.Flush()
     # Get a lease on the task
     tasks = manager.QueryAndOwn(test_queue, lease_seconds=100, limit=100)
 
@@ -344,13 +332,9 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
 
     # Now delete the task
     manager.Delete(test_queue, tasks)
-
+    manager.Flush()
     # Should not exist in the table
-    value, ts = data_store.DB.Resolve(
-        test_queue, "task:%08d" % task.task_id, token=self.token)
-
-    self.assertEqual(value, None)
-    self.assertEqual(ts, 0)
+    self.assertEqual(list(data_store.DB.ReadTasks(test_queue, task.task_id, token=self.token)), [])
 
     # If we try to get another lease on it we should fail - even after
     # expiry time.
@@ -370,7 +354,7 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
 
     manager = queue_manager.QueueManager(token=self.token)
     manager.Schedule([task])
-
+    manager.Flush()
     # Get a lease on the task
     tasks = manager.QueryAndOwn(test_queue, lease_seconds=100, limit=100)
 
@@ -386,7 +370,7 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
 
     # Now we reschedule it
     manager.Schedule(tasks)
-
+    manager.Flush()
     # The id should not change
     self.assertEqual(tasks[0].task_id, original_id)
 
@@ -413,7 +397,7 @@ class QueueManagerTest(test_lib.FlowTestsBaseclass):
 
     manager = queue_manager.QueueManager(token=self.token)
     manager.Schedule(tasks)
-
+    manager.Flush()
     tasks = manager.QueryAndOwn(test_queue, lease_seconds=100, limit=3)
 
     self.assertEqual(len(tasks), 3)

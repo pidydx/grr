@@ -12,8 +12,6 @@ from grr.lib.rdfvalues import flows as rdf_flows
 class MultiTypeCollection(object):
   """A collection that stores multiple types of data in per-type sequences."""
 
-  VALUE_TYPE_PREFIX = "aff4:value_type_"
-
   def __init__(self, collection_id, token=None):
     super(MultiTypeCollection, self).__init__()
     # The collection_id for this collection is a RDFURN for now.
@@ -88,28 +86,13 @@ class MultiTypeCollection(object):
         **kwargs)
 
     if mutation_pool:
-      mutation_pool.Set(
-          collection_urn,
-          "%s%s" % (cls.VALUE_TYPE_PREFIX, value_type),
-          1,
-          timestamp=0,
-          **kwargs)
+      mutation_pool.CreateMultiTypeCollectionEntry(collection_urn, value_type)
     else:
-      data_store.DB.Set(
-          collection_urn,
-          "%s%s" % (cls.VALUE_TYPE_PREFIX, value_type),
-          1,
-          timestamp=0,
-          token=token,
-          **kwargs)
+      data_store.DB.CreateMultiTypeCollectionEntry(collection_urn, value_type, token=token)
+
 
   def ListStoredTypes(self):
-    res = []
-    for attribute, _, _ in data_store.DB.ResolveRow(
-        self.collection_id, token=self.token):
-      if attribute.startswith(self.VALUE_TYPE_PREFIX):
-        res.append(attribute[len(self.VALUE_TYPE_PREFIX):])
-    return res
+    return data_store.DB.ReadMultiTypeCollectionEntries(self.collection_id, token=self.token)
 
   def ScanByType(self,
                  type_name,
@@ -139,7 +122,8 @@ class MultiTypeCollection(object):
     """
     sub_collection_urn = self.collection_id.Add(type_name)
     sub_collection = sequential_collection.GrrMessageCollection(
-        sub_collection_urn, token=self.token)
+        sub_collection_urn,
+        token=self.token)
     for item in sub_collection.Scan(
         after_timestamp=after_timestamp,
         include_suffix=include_suffix,
@@ -191,8 +175,7 @@ class MultiTypeCollection(object):
 
   def __iter__(self):
     sub_collection_urns = [
-        self.collection_id.Add(stored_type)
-        for stored_type in self.ListStoredTypes()
+        self.collection_id.Add(stored_type) for stored_type in self.ListStoredTypes()
     ]
     for sub_collection_urn in sub_collection_urns:
       sub_collection = sequential_collection.GrrMessageCollection(
@@ -203,8 +186,7 @@ class MultiTypeCollection(object):
   def __len__(self):
     l = 0
     sub_collection_urns = [
-        self.collection_id.Add(stored_type)
-        for stored_type in self.ListStoredTypes()
+        self.collection_id.Add(stored_type) for stored_type in self.ListStoredTypes()
     ]
     for sub_collection_urn in sub_collection_urns:
       sub_collection = sequential_collection.GrrMessageCollection(
@@ -214,13 +196,9 @@ class MultiTypeCollection(object):
     return l
 
   def Delete(self):
-    mutation_pool = data_store.DB.GetMutationPool(self.token)
-    with mutation_pool:
-      mutation_pool.DeleteSubject(self.collection_id)
-      for urn, _, _ in data_store.DB.ScanAttribute(
-          self.collection_id,
-          sequential_collection.SequentialCollection.ATTRIBUTE,
-          token=self.token):
-        mutation_pool.DeleteSubject(rdfvalue.RDFURN(urn))
-        if mutation_pool.Size() > 50000:
-          mutation_pool.Flush()
+    sub_collection_urns = [
+      self.collection_id.Add(stored_type) for stored_type in self.ListStoredTypes()
+      ]
+    for sub_collection_urn in sub_collection_urns:
+      data_store.DB.DeleteCollection(sub_collection_urn, token=self.token)
+    data_store.DB.DeleteCollection(self.collection_id, token=self.token)

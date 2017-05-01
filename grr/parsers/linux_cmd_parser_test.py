@@ -7,6 +7,7 @@ import os
 from grr.lib import artifact
 from grr.lib import artifact_registry
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import parsers
 from grr.lib import test_lib
@@ -212,7 +213,10 @@ sources:
 supported_os: [Linux]
 """
     artifact.UploadArtifactYamlFile(content_good1, token=self.token)
+    data_store.DB.Flush()
     artifact.UploadArtifactYamlFile(content_good2, token=self.token)
+    data_store.DB.Flush()
+    parser = linux_cmd_parser.PsCmdParser
     # Add these new artifacts to the supported ones for the parser.
     parser.supported_artifacts.extend(["GoodPsArgs1", "GoodPsArgs2"])
     parser.Validate()
@@ -237,7 +241,9 @@ sources:
 supported_os: [Linux]
 """
     artifact.UploadArtifactYamlFile(content_bad1, token=self.token)
+    data_store.DB.Flush()
     artifact.UploadArtifactYamlFile(content_bad2, token=self.token)
+    data_store.DB.Flush()
     orig = parser.supported_artifacts
     for bad_artifact in ["BadPsArgsDuplicateCmd", "BadPsArgsCmdNotAtEnd"]:
       with self.assertRaises(parsers.ParserDefinitionError):

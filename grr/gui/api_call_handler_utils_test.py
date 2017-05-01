@@ -15,6 +15,7 @@ import yaml
 from grr.gui import api_call_handler_utils
 
 from grr.lib import aff4
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import test_lib
 from grr.lib.aff4_objects import collects
@@ -289,7 +290,7 @@ class FilterCollectionTest(test_lib.GRRBaseTest):
         token=self.token) as fd:
       for i in range(10):
         fd.Add(rdf_paths.PathSpec(path="/var/os/tmp-%d" % i, pathtype="OS"))
-
+    data_store.DB.Flush()
     self.fd = aff4.FACTORY.Open("aff4:/tmp/foo/bar", token=self.token)
 
   def testFiltersByOffsetAndCount(self):

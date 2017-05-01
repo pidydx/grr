@@ -173,8 +173,9 @@ class QueueTest(test_lib.AFF4ObjectTest):
     self.assertEqual(100, len(results))
 
     for subject, _ in results:
+      subject = subject[0].Add("Records").Add("%016x.%06x" % (subject[1], subject[2]))
       data_store.DB.DeleteAttributes(
-          subject, [queue.VALUE_ATTRIBUTE], token=self.token)
+          subject, [data_store.DB.QUEUE_ITEM_ATTRIBUTE], token=self.token)
     data_store.DB.Flush()
 
     self.assertEqual(
@@ -182,7 +183,7 @@ class QueueTest(test_lib.AFF4ObjectTest):
         sum(1
             for _ in data_store.DB.ScanAttribute(
                 queue.urn.Add("Records"),
-                queue.LOCK_ATTRIBUTE,
+                data_store.DB.QUEUE_ITEM_LEASE_ATTRIBUTE,
                 token=self.token)))
 
     with aff4.FACTORY.OpenWithLock(
@@ -195,7 +196,7 @@ class QueueTest(test_lib.AFF4ObjectTest):
         sum(1
             for _ in data_store.DB.ScanAttribute(
                 queue.urn.Add("Records"),
-                queue.LOCK_ATTRIBUTE,
+                data_store.DB.QUEUE_ITEM_LEASE_ATTRIBUTE,
                 token=self.token)))
 
 

@@ -4,6 +4,7 @@
 from grr.lib import access_control
 from grr.lib import aff4
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import flow
 from grr.lib import rdfvalue
@@ -95,7 +96,7 @@ class ApprovalTest(test_lib.GRRBaseTest):
     with aff4.FACTORY.Create(
         approval_urn, aff4.AFF4Volume, token=self.token) as _:
       pass
-
+    data_store.DB.Flush()
     with self.assertRaisesRegexp(access_control.UnauthorizedAccess,
                                  "Couldn't open any of 1 approvals"):
       security.Approval.GetApprovalForObject(self.client_id, token=self.token)

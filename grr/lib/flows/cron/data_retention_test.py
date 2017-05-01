@@ -75,6 +75,8 @@ class CleanHuntsTest(test_lib.FlowTestsBaseclass):
                                 latest_timestamp - rdfvalue.Duration("150s"))
 
   def testNoTraceOfDeletedHuntIsLeftInTheDataStore(self):
+    urns = [urn[0] for urn in aff4.FACTORY.RecursiveMultiListChildren(self.hunts_urns, token=self.token)]
+
     with test_lib.ConfigOverrider({
         "DataRetention.hunts_ttl": rdfvalue.Duration("1s")
     }):
@@ -84,23 +86,9 @@ class CleanHuntsTest(test_lib.FlowTestsBaseclass):
             sync=True,
             token=self.token)
 
-      for hunt_urn in self.hunts_urns:
-        hunt_id = hunt_urn.Basename()
-
-        # NOTE: We assume that tests are running with FakeDataStore.
-        for subject, subject_data in data_store.DB.subjects.items():
-          # Foreman rules are versioned, so hunt ids will be mentioned
-          # there. Ignoring audit events as well.
-          if subject == "aff4:/foreman" or subject.startswith("aff4:/audit"):
-            continue
-
-          self.assertNotIn(hunt_id, subject)
-
-          for column_name, values in subject_data.items():
-            self.assertNotIn(hunt_id, column_name)
-
-            for value, _ in values:
-              self.assertNotIn(hunt_id, utils.SmartUnicode(value))
+      for urn in urns:
+          self.assertItemsEqual(data_store.DB.ResolveRow(urn, token=self.token), [])
+          self.assertItemsEqual(list(data_store.DB.ReadAFF4Index(urn, timestamp=None, token=self.token)), [])
 
   def testKeepsHuntsWithRetainLabel(self):
     exception_label_name = config_lib.CONFIG[
@@ -167,7 +155,9 @@ class CleanCronJobsTest(test_lib.FlowTestsBaseclass):
 
     for i in range(self.NUM_CRON_RUNS):
       with test_lib.FakeTime(40 + 60 * i):
+        data_store.DB.Flush()
         cronjobs.CRON_MANAGER.RunOnce(token=self.token, force=True)
+    data_store.DB.Flush()
 
   def testDoesNothingIfAgeLimitNotSetInConfig(self):
     with test_lib.FakeTime(40 + 60 * self.NUM_CRON_RUNS):
@@ -215,10 +205,13 @@ class CleanCronJobsTest(test_lib.FlowTestsBaseclass):
 
       # Check that no subjects are left behind that have anything to do with
       # the deleted flows (requests, responses, ...).
+      # This check may be incomplete due to moving away from a single table to store all subjects
       deleted_flows = set(all_children) - set(remaining_children)
-      for subject in data_store.DB.subjects:
-        for flow_urn in deleted_flows:
-          self.assertNotIn(str(flow_urn), subject)
+      data_store.DB.Flush()
+      for flow_urn in deleted_flows:
+        self.assertItemsEqual(list(data_store.DB.ReadRequests(flow_urn, token=self.token)), [])
+        self.assertItemsEqual(list(data_store.DB.ReadStatuses(flow_urn, token=self.token)), [])
+        self.assertItemsEqual(data_store.DB.ResolveRow(flow_urn, token=self.token), [])
 
 
 class CleanTempTest(test_lib.FlowTestsBaseclass):
@@ -239,6 +232,7 @@ class CleanTempTest(test_lib.FlowTestsBaseclass):
             token=self.token)
         self.tmp_urns.append(tmp_obj.urn)
         tmp_obj.Close()
+        data_store.DB.Flush()
 
   def testDoesNothingIfAgeLimitNotSetInConfig(self):
     with test_lib.FakeTime(40 + 60 * self.NUM_TMP):

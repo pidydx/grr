@@ -370,14 +370,13 @@ class FlowCreationTest(BasicFlowTest):
         flow_name="CallClientParentFlow",
         token=self.token)
 
-    client_requests = data_store.DB.ResolvePrefix(
-        self.client_id.Queue(), "task:", token=self.token)
+    client_requests = list(data_store.DB.ReadTasks(self.client_id.Queue(), token=self.token))
 
     self.assertEqual(len(client_requests), 1)
 
     f = aff4.FACTORY.Open(session_id, token=self.token)
 
-    for (_, _, timestamp) in client_requests:
+    for _, timestamp in client_requests:
       # Check that the client request was written after the flow was created.
       self.assertLess(
           int(f.Get(f.Schema.TYPE).age), timestamp,
@@ -492,19 +491,10 @@ class FlowTest(BasicFlowTest):
     self.SendMessage(message)
 
     # Now also set the state on the RequestState
-    request_state, _ = data_store.DB.Resolve(
-        message.session_id.Add("state"),
-        queue_manager.QueueManager.FLOW_REQUEST_TEMPLATE % message.request_id,
-        token=self.token)
+    request, timestamp = data_store.DB.ReadRequests(session_id, token=self.token).next()
+    request.status = status
 
-    request_state = rdf_flows.RequestState.FromSerializedString(request_state)
-    request_state.status = status
-
-    data_store.DB.Set(
-        message.session_id.Add("state"),
-        queue_manager.QueueManager.FLOW_REQUEST_TEMPLATE % message.request_id,
-        request_state,
-        token=self.token)
+    data_store.DB.CreateRequests(message.session_id, [(request, timestamp)], token=self.token)
 
     return message
 
@@ -551,6 +541,7 @@ class FlowTest(BasicFlowTest):
     flow_obj.CallClient(self.client_id, server_stubs.GetClientStats)
 
     # Check that a message went out to the client
+    data_store.DB.Flush()
     manager = queue_manager.QueueManager(token=self.token)
     tasks = manager.Query(self.client_id, limit=100)
 

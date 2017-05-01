@@ -20,7 +20,6 @@ import tempfile
 import time
 import traceback
 import types
-import unittest
 
 
 import mock
@@ -453,15 +452,14 @@ class GRRBaseTest(unittest.TestCase):
       # but no actual ACLs.
       data_store.DB.security_manager = MockSecurityManager()
 
-    logging.info("Starting test: %s.%s", self.__class__.__name__,
+    logging.info("Starting test (%s): %s.%s", config_lib.CONFIG["Datastore.implementation"],
+                 self.__class__.__name__,
                  self._testMethodName)
     self.last_start_time = time.time()
 
-    try:
-      # Clear() is much faster than init but only supported for FakeDataStore.
-      data_store.DB.Clear()
-    except AttributeError:
-      self.InitDatastore()
+
+    # Clear() is much faster than init but only supported for FakeDataStore.
+    data_store.DB.Clear()
 
     aff4.FACTORY.Flush()
 
@@ -490,6 +488,7 @@ class GRRBaseTest(unittest.TestCase):
   def tearDown(self):
     self.nanny_stubber.Stop()
     self.mail_stubber.Stop()
+    data_store.DB.Flush()
 
     logging.info("Completed test: %s.%s (%.4fs)", self.__class__.__name__,
                  self._testMethodName, time.time() - self.last_start_time)
@@ -766,6 +765,7 @@ class GRRBaseTest(unittest.TestCase):
           fd.Flush()
 
           index.AddClient(fd)
+    data_store.DB.Flush()
     return client_ids
 
   def DeleteClients(self, nr_clients):
@@ -2245,6 +2245,7 @@ class GrrTestProgram(unittest.TestProgram):
     """Global teardown code goes here."""
     self.config_set_disable.Stop()
     self.smtp_patcher.stop()
+    data_store.DB.Destroy()
 
   def parseArgs(self, argv):
     """Delegate arg parsing to the conf subsystem."""

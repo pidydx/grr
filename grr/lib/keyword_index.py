@@ -15,16 +15,9 @@ from grr.lib import rdfvalue
 class AFF4KeywordIndex(aff4.AFF4Object):
   """An index linking keywords to names of objects.
   """
-  INDEX_PREFIX = "kw_index:"
-  INDEX_PREFIX_LEN = len(INDEX_PREFIX)
-  INDEX_COLUMN_FORMAT = INDEX_PREFIX + "%s"
-
   # The lowest and highest legal timestamps.
   FIRST_TIMESTAMP = 0
   LAST_TIMESTAMP = (2**63) - 2  # maxint64 - 1
-
-  def _KeywordToURN(self, keyword):
-    return self.urn.Add(keyword)
 
   def Lookup(self, keywords, **kwargs):
     """Finds objects associated with keywords.
@@ -70,19 +63,14 @@ class AFF4KeywordIndex(aff4.AFF4Object):
       A dict mapping each keyword to a set of relevant names.
 
     """
-    keyword_urns = {self._KeywordToURN(k): k for k in keywords}
     result = {}
     for kw in keywords:
       result[kw] = set()
 
-    for keyword_urn, value in data_store.DB.MultiResolvePrefix(
-        keyword_urns.keys(),
-        self.INDEX_PREFIX,
-        timestamp=(start_time, end_time + 1),
-        token=self.token):
-      for column, _, ts in value:
-        kw = keyword_urns[keyword_urn]
-        name = column[self.INDEX_PREFIX_LEN:]
+    timestamp = (start_time, end_time)
+
+    for kw, names in data_store.DB.MultiReadKeywordsIndex(keywords, timestamp, token=self.token):
+      for name, ts in names:
         result[kw].add(name)
         if last_seen_map is not None:
           last_seen_map[(kw, name)] = max(last_seen_map.get((kw, name), -1), ts)
@@ -108,23 +96,8 @@ class AFF4KeywordIndex(aff4.AFF4Object):
     """
     if timestamp is None:
       timestamp = rdfvalue.RDFDatetime.Now().AsMicroSecondsFromEpoch()
-    if sync:
-      with data_store.DB.GetMutationPool(token=self.token) as mutation_pool:
-        for keyword in set(keywords):
-          mutation_pool.Set(self._KeywordToURN(keyword),
-                            self.INDEX_COLUMN_FORMAT % name,
-                            "",
-                            timestamp=timestamp,
-                            **kwargs)
-    else:
-      for keyword in set(keywords):
-        data_store.DB.Set(self._KeywordToURN(keyword),
-                          self.INDEX_COLUMN_FORMAT % name,
-                          "",
-                          token=self.token,
-                          sync=False,
-                          timestamp=timestamp,
-                          **kwargs)
+
+    data_store.DB.CreateKeywordsIndex(name, keywords, timestamp=timestamp, sync=sync, token=self.token)
 
   def RemoveKeywordsForName(self, name, keywords, sync=True):
     """Removes keywords for a name.
@@ -134,14 +107,5 @@ class AFF4KeywordIndex(aff4.AFF4Object):
       keywords: A collection of keywords.
       sync: Sync to data store immediately.
     """
-    if sync:
-      with data_store.DB.GetMutationPool(token=self.token) as mutation_pool:
-        for keyword in set(keywords):
-          mutation_pool.DeleteAttributes(
-              self._KeywordToURN(keyword), [self.INDEX_COLUMN_FORMAT % name])
-    else:
-      for keyword in set(keywords):
-        data_store.DB.DeleteAttributes(
-            self._KeywordToURN(keyword), [self.INDEX_COLUMN_FORMAT % name],
-            token=self.token,
-            sync=False)
+
+    data_store.DB.DeleteKeywordsIndex(name, keywords, sync=sync, token=self.token)

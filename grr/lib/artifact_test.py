@@ -19,6 +19,7 @@ from grr.lib import aff4
 from grr.lib import artifact
 from grr.lib import artifact_registry
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import flow
 from grr.lib import parsers
@@ -352,12 +353,13 @@ supported_os: [Linux]
     # be an error that we can't overwrite the system artifact. The
     # artifact should automatically get deleted from the collection to
     # mitigate the problem.
+    data_store.DB.Flush()
     with self.assertRaises(artifact_registry.ArtifactDefinitionError):
       artifact_registry.REGISTRY._ReloadArtifacts()
 
     # As stated above, now this should work.
     artifact_registry.REGISTRY._ReloadArtifacts()
-
+    data_store.DB.Flush()
     # Make sure the artifact is now loaded and it's the version from the file.
     self.assertIn("WMIActiveScriptEventConsumer",
                   artifact_registry.REGISTRY._artifacts)

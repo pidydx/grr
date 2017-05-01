@@ -103,9 +103,10 @@ class MultiTypeCollectionTest(test_lib.AFF4ObjectTest):
 
     self.collection.Delete()
 
-    for urn in data_store.DB.subjects.keys():
-      self.assertFalse(utils.SmartStr(self.collection.collection_id) in urn)
-
+    self.assertItemsEqual(list(data_store.DB.ReadMultiTypeCollectionEntries(self.collection.collection_id, token=self.token)), [])
+    self.assertItemsEqual(list(data_store.DB.ScanCollectionItems(self.collection.collection_id.Add('RDFString'), rdfvalue.RDFString, token=self.token)), [])
+    self.assertItemsEqual(list(data_store.DB.ScanCollectionItems(self.collection.collection_id.Add('RDFURN'), rdfvalue.RDFURN, token=self.token)), [])
+    self.assertItemsEqual(list(data_store.DB.ScanCollectionItems(self.collection.collection_id.Add('RDFInteger'), rdfvalue.RDFInteger, token=self.token)), [])
 
 def main(argv):
   # Run the full test suite
@@ -114,3 +115,4 @@ def main(argv):
 
 if __name__ == "__main__":
   flags.StartMain(main)
+

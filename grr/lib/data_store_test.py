@@ -120,7 +120,7 @@ class _DataStoreTest(test_lib.GRRBaseTest):
 
   def testSetResolve(self):
     """Test the Set() and Resolve() methods."""
-    predicate = "task:00000001"
+    predicate = "metadata:00000001"
     value = rdf_flows.GrrMessage(session_id="session")
 
     # Ensure that setting a value is immediately available.
@@ -366,24 +366,14 @@ class _DataStoreTest(test_lib.GRRBaseTest):
       data_store.DB.Set(row, predicate_1, "hello", token=self.token)
       data_store.DB.Set(row, predicate_2, "hello", token=self.token)
 
-    self.assertEqual(10,
-                     sum(1
-                         for _ in data_store.DB.ScanAttribute(
-                             "aff4:/row/", predicate_1, token=self.token)))
-    self.assertEqual(10,
-                     sum(1
-                         for _ in data_store.DB.ScanAttribute(
-                             "aff4:/row/", predicate_2, token=self.token)))
+    self.assertEqual(len(list(data_store.DB.MultiResolvePrefix(test_rows, [predicate_1], token=self.token))), 10)
+    self.assertEqual(len(list(data_store.DB.MultiResolvePrefix(test_rows, [predicate_2], token=self.token))), 10)
+
     data_store.DB.MultiDeleteAttributes(
         test_rows, [predicate_1, predicate_2], token=self.token)
-    self.assertEqual(0,
-                     sum(1
-                         for _ in data_store.DB.ScanAttribute(
-                             "aff4:/row/", predicate_1, token=self.token)))
-    self.assertEqual(0,
-                     sum(1
-                         for _ in data_store.DB.ScanAttribute(
-                             "aff4:/row/", predicate_2, token=self.token)))
+
+    self.assertEqual(len(list(data_store.DB.MultiResolvePrefix(test_rows, [predicate_1], token=self.token))), 0)
+    self.assertEqual(len(list(data_store.DB.MultiResolvePrefix(test_rows, [predicate_2], token=self.token))), 0)
 
   def CheckLength(self, predicate, l):
     all_attributes = data_store.DB.ResolveMulti(
@@ -556,15 +546,16 @@ class _DataStoreTest(test_lib.GRRBaseTest):
     row = subjects["aff4:/prefix_row_4"]
     self.assertEqual(len(row), 5)
 
-    subjects = dict(
-        data_store.DB.MultiResolvePrefix(
-            rows, ["metadata:XXX"], token=self.token))
-    self.assertItemsEqual(subjects.keys(), rows)
-    for row in subjects.values():
-      # Those with 3-5 X's.
-      self.assertEqual(len(row), 3)
-      self.assertIn((u"metadata:XXX", "3", 3000), row)
-      self.assertNotIn((u"metadata:XX", "2", 2000), row)
+    # This is no longer the correct behavior for MultiResolvePrefix as it is no longer used this way.
+    # subjects = dict(
+    #     data_store.DB.MultiResolvePrefix(
+    #         rows, ["metadata:XXX"], token=self.token))
+    # self.assertItemsEqual(subjects.keys(), rows)
+    # for row in subjects.values():
+    #   # Those with 3-5 X's.
+    #   self.assertEqual(len(row), 3)
+    #   self.assertIn((u"metadata:XXX", "3", 3000), row)
+    #   self.assertNotIn((u"metadata:XX", "2", 2000), row)
 
     # Test unicode subjects.
     unicode_string = u"this is a uñîcödé string"
@@ -722,7 +713,7 @@ class _DataStoreTest(test_lib.GRRBaseTest):
     result = list(
         data_store.DB.ResolvePrefix(
             subject,
-            "metadata:predicate",
+            "metadata:",
             timestamp=data_store.DB.ALL_TIMESTAMPS,
             limit=1000,
             token=self.token))
@@ -768,7 +759,7 @@ class _DataStoreTest(test_lib.GRRBaseTest):
     result = list(
         data_store.DB.ResolvePrefix(
             subject,
-            "metadata:predicate",
+            "metadata:",
             timestamp=data_store.DB.ALL_TIMESTAMPS,
             limit=1000,
             token=self.token))
@@ -782,204 +773,204 @@ class _DataStoreTest(test_lib.GRRBaseTest):
     for result_index, i in enumerate(reversed(range(100))):
       self.assertEqual(predicate2_results[result_index], (predicate2, str(i),
                                                           i * 1000))
-
-  def testScanAttribute(self):
-    data_store.DB.Set("aff4:/A", "aff4:foo", "A value", token=self.token)
-    for i in range(1, 10):
-      data_store.DB.Set(
-          "aff4:/B/" + str(i),
-          "aff4:foo",
-          "B " + str(i) + " old value",
-          timestamp=2000,
-          token=self.token)
-      data_store.DB.Set(
-          "aff4:/B/" + str(i),
-          "aff4:foo",
-          "B " + str(i) + " value",
-          timestamp=2000,
-          token=self.token)
-      data_store.DB.Set(
-          "aff4:/B/" + str(i),
-          "aff4:foo",
-          "B " + str(i) + " older value",
-          timestamp=1900,
-          token=self.token,
-          replace=False)
-
-    # Something with a different attribute, which should not be included.
-    data_store.DB.Set(
-        "aff4:/B/1.1",
-        "aff4:foo2",
-        "B 1.1 other value",
-        timestamp=2000,
-        token=self.token)
-    data_store.DB.Set("aff4:/C", "aff4:foo", "C value", token=self.token)
-
-    values = [(r[1], r[2])
-              for r in data_store.DB.ScanAttribute(
-                  "aff4:/B", "aff4:foo", token=self.token)]
-    self.assertEqual(values, [(2000, "B " + str(i) + " value")
-                              for i in range(1, 10)])
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute(
-            "aff4:/B", "aff4:foo", max_records=2, token=self.token)
-    ]
-    self.assertEqual(values, ["B " + str(i) + " value" for i in range(1, 3)])
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute(
-            "aff4:/B", "aff4:foo", after_urn="aff4:/B/2", token=self.token)
-    ]
-    self.assertEqual(values, ["B " + str(i) + " value" for i in range(3, 10)])
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute(
-            "aff4:/B",
-            u"aff4:foo",
-            after_urn=rdfvalue.RDFURN("aff4:/B/2"),
-            max_records=2,
-            token=self.token)
-    ]
-    self.assertEqual(values, ["B " + str(i) + " value" for i in range(3, 5)])
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute(
-            "aff4:/", "aff4:foo", token=self.token)
-    ]
-    self.assertEqual(
-        values, ["A value"] + ["B " + str(i) + " value"
-                               for i in range(1, 10)] + ["C value"])
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute("", "aff4:foo", token=self.token)
-    ]
-    self.assertEqual(
-        values, ["A value"] + ["B " + str(i) + " value"
-                               for i in range(1, 10)] + ["C value"])
-
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha1/", "aff4:hash", "h1", token=self.token)
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha1/AAAAA",
-        "aff4:hash",
-        "h2",
-        token=self.token)
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha1/AAAAB",
-        "aff4:hash",
-        "h3",
-        token=self.token)
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha256/", "aff4:hash", "h4", token=self.token)
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha256/AAAAA",
-        "aff4:hash",
-        "h5",
-        token=self.token)
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha256/AAAAB",
-        "aff4:hash",
-        "h6",
-        token=self.token)
-    data_store.DB.Set(
-        "aff4:/files/hash/generic/sha90000",
-        "aff4:hash",
-        "h7",
-        token=self.token)
-
-    (value, _) = data_store.DB.Resolve(
-        "aff4:/files/hash/generic/sha90000", "aff4:hash", token=self.token)
-    self.assertEqual(value, "h7")
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute(
-            "aff4:/files/hash", "aff4:hash", token=self.token)
-    ]
-    self.assertEqual(values, ["h1", "h2", "h3", "h4", "h5", "h6", "h7"])
-
-    values = [
-        r[2]
-        for r in data_store.DB.ScanAttribute(
-            "aff4:/files/hash",
-            "aff4:hash",
-            token=self.token,
-            relaxed_order=True)
-    ]
-    self.assertEqual(sorted(values), ["h1", "h2", "h3", "h4", "h5", "h6", "h7"])
-
-  def testScanAttributeRequiresReadAccess(self):
-    self._InstallACLChecks("r")
-    v = data_store.DB.ScanAttribute("aff4:/", "aff4:hash", token=self.token)
-    self.assertRaises(access_control.UnauthorizedAccess, v.next)
-
-  def testScanAttributeRequiresQueryAccess(self):
-    self._InstallACLChecks("q")
-    v = data_store.DB.ScanAttribute("aff4:/", "aff4:hash", token=self.token)
-    self.assertRaises(access_control.UnauthorizedAccess, v.next)
-
-  def testScanAttributes(self):
-    for i in range(0, 7):
-      data_store.DB.Set(
-          "aff4:/C/" + str(i),
-          "aff4:foo",
-          "C foo " + str(i) + " value",
-          timestamp=10000,
-          token=self.token)
-      data_store.DB.Set(
-          "aff4:/C/" + str(i),
-          "aff4:foo",
-          "C foo " + str(i) + " old value",
-          timestamp=9000,
-          token=self.token,
-          replace=False)
-    for i in range(3, 10):
-      data_store.DB.Set(
-          "aff4:/C/" + str(i),
-          "aff4:bar",
-          "C bar " + str(i) + " value",
-          timestamp=15000,
-          token=self.token)
-      data_store.DB.Set(
-          "aff4:/C/" + str(i),
-          "aff4:bar",
-          "C bar " + str(i) + " old value",
-          timestamp=9500,
-          token=self.token,
-          replace=False)
-    data_store.DB.Set(
-        "aff4:/C/5a",
-        "aff4:baz",
-        "C baz value",
-        timestamp=9800,
-        token=self.token)
-
-    results = list(
-        data_store.DB.ScanAttributes(
-            "aff4:/C", ["aff4:foo", "aff4:bar"], token=self.token))
-    self.assertEqual(len(results), 10)
-    self.assertEqual([s for s, _ in results],
-                     ["aff4:/C/" + str(i) for i in range(10)])
-
-    self.assertEqual(results[0][1], {"aff4:foo": (10000, "C foo 0 value")})
-    self.assertEqual(results[5][1], {
-        "aff4:bar": (15000, "C bar 5 value"),
-        "aff4:foo": (10000, "C foo 5 value")
-    })
-    self.assertEqual(results[9][1], {"aff4:bar": (15000, "C bar 9 value")})
-
-    results = list(
-        data_store.DB.ScanAttributes(
-            "aff4:/C", ["aff4:foo", "aff4:bar"],
-            max_records=5,
-            token=self.token))
-    self.assertEqual(len(results), 5)
+  # Scan
+  # def testScanAttribute(self):
+  #   data_store.DB.Set("aff4:/A", "aff4:foo", "A value", token=self.token)
+  #   for i in range(1, 10):
+  #     data_store.DB.Set(
+  #         "aff4:/B/" + str(i),
+  #         "aff4:foo",
+  #         "B " + str(i) + " old value",
+  #         timestamp=2000,
+  #         token=self.token)
+  #     data_store.DB.Set(
+  #         "aff4:/B/" + str(i),
+  #         "aff4:foo",
+  #         "B " + str(i) + " value",
+  #         timestamp=2000,
+  #         token=self.token)
+  #     data_store.DB.Set(
+  #         "aff4:/B/" + str(i),
+  #         "aff4:foo",
+  #         "B " + str(i) + " older value",
+  #         timestamp=1900,
+  #         token=self.token,
+  #         replace=False)
+  #
+  #   # Something with a different attribute, which should not be included.
+  #   data_store.DB.Set(
+  #       "aff4:/B/1.1",
+  #       "aff4:foo2",
+  #       "B 1.1 other value",
+  #       timestamp=2000,
+  #       token=self.token)
+  #   data_store.DB.Set("aff4:/C", "aff4:foo", "C value", token=self.token)
+  #
+  #   values = [(r[1], r[2])
+  #             for r in data_store.DB.ScanAttribute(
+  #                 "aff4:/B", "aff4:foo", token=self.token)]
+  #   self.assertEqual(values, [(2000, "B " + str(i) + " value")
+  #                             for i in range(1, 10)])
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute(
+  #           "aff4:/B", "aff4:foo", max_records=2, token=self.token)
+  #   ]
+  #   self.assertEqual(values, ["B " + str(i) + " value" for i in range(1, 3)])
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute(
+  #           "aff4:/B", "aff4:foo", after_urn="aff4:/B/2", token=self.token)
+  #   ]
+  #   self.assertEqual(values, ["B " + str(i) + " value" for i in range(3, 10)])
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute(
+  #           "aff4:/B",
+  #           u"aff4:foo",
+  #           after_urn=rdfvalue.RDFURN("aff4:/B/2"),
+  #           max_records=2,
+  #           token=self.token)
+  #   ]
+  #   self.assertEqual(values, ["B " + str(i) + " value" for i in range(3, 5)])
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute(
+  #           "aff4:/", "aff4:foo", token=self.token)
+  #   ]
+  #   self.assertEqual(
+  #       values, ["A value"] + ["B " + str(i) + " value"
+  #                              for i in range(1, 10)] + ["C value"])
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute("", "aff4:foo", token=self.token)
+  #   ]
+  #   self.assertEqual(
+  #       values, ["A value"] + ["B " + str(i) + " value"
+  #                              for i in range(1, 10)] + ["C value"])
+  #
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha1/", "aff4:hash", "h1", token=self.token)
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha1/AAAAA",
+  #       "aff4:hash",
+  #       "h2",
+  #       token=self.token)
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha1/AAAAB",
+  #       "aff4:hash",
+  #       "h3",
+  #       token=self.token)
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha256/", "aff4:hash", "h4", token=self.token)
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha256/AAAAA",
+  #       "aff4:hash",
+  #       "h5",
+  #       token=self.token)
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha256/AAAAB",
+  #       "aff4:hash",
+  #       "h6",
+  #       token=self.token)
+  #   data_store.DB.Set(
+  #       "aff4:/files/hash/generic/sha90000",
+  #       "aff4:hash",
+  #       "h7",
+  #       token=self.token)
+  #
+  #   (value, _) = data_store.DB.Resolve(
+  #       "aff4:/files/hash/generic/sha90000", "aff4:hash", token=self.token)
+  #   self.assertEqual(value, "h7")
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute(
+  #           "aff4:/files/hash", "aff4:hash", token=self.token)
+  #   ]
+  #   self.assertEqual(values, ["h1", "h2", "h3", "h4", "h5", "h6", "h7"])
+  #
+  #   values = [
+  #       r[2]
+  #       for r in data_store.DB.ScanAttribute(
+  #           "aff4:/files/hash",
+  #           "aff4:hash",
+  #           token=self.token,
+  #           relaxed_order=True)
+  #   ]
+  #   self.assertEqual(sorted(values), ["h1", "h2", "h3", "h4", "h5", "h6", "h7"])
+  #
+  # def testScanAttributeRequiresReadAccess(self):
+  #   self._InstallACLChecks("r")
+  #   v = data_store.DB.ScanAttribute("aff4:/", "aff4:hash", token=self.token)
+  #   self.assertRaises(access_control.UnauthorizedAccess, v.next)
+  #
+  # def testScanAttributeRequiresQueryAccess(self):
+  #   self._InstallACLChecks("q")
+  #   v = data_store.DB.ScanAttribute("aff4:/", "aff4:hash", token=self.token)
+  #   self.assertRaises(access_control.UnauthorizedAccess, v.next)
+  #
+  # def testScanAttributes(self):
+  #   for i in range(0, 7):
+  #     data_store.DB.Set(
+  #         "aff4:/C/" + str(i),
+  #         "aff4:foo",
+  #         "C foo " + str(i) + " value",
+  #         timestamp=10000,
+  #         token=self.token)
+  #     data_store.DB.Set(
+  #         "aff4:/C/" + str(i),
+  #         "aff4:foo",
+  #         "C foo " + str(i) + " old value",
+  #         timestamp=9000,
+  #         token=self.token,
+  #         replace=False)
+  #   for i in range(3, 10):
+  #     data_store.DB.Set(
+  #         "aff4:/C/" + str(i),
+  #         "aff4:bar",
+  #         "C bar " + str(i) + " value",
+  #         timestamp=15000,
+  #         token=self.token)
+  #     data_store.DB.Set(
+  #         "aff4:/C/" + str(i),
+  #         "aff4:bar",
+  #         "C bar " + str(i) + " old value",
+  #         timestamp=9500,
+  #         token=self.token,
+  #         replace=False)
+  #   data_store.DB.Set(
+  #       "aff4:/C/5a",
+  #       "aff4:baz",
+  #       "C baz value",
+  #       timestamp=9800,
+  #       token=self.token)
+  #
+  #   results = list(
+  #       data_store.DB.ScanAttributes(
+  #           "aff4:/C", ["aff4:foo", "aff4:bar"], token=self.token))
+  #   self.assertEqual(len(results), 10)
+  #   self.assertEqual([s for s, _ in results],
+  #                    ["aff4:/C/" + str(i) for i in range(10)])
+  #
+  #   self.assertEqual(results[0][1], {"aff4:foo": (10000, "C foo 0 value")})
+  #   self.assertEqual(results[5][1], {
+  #       "aff4:bar": (15000, "C bar 5 value"),
+  #       "aff4:foo": (10000, "C foo 5 value")
+  #   })
+  #   self.assertEqual(results[9][1], {"aff4:bar": (15000, "C bar 9 value")})
+  #
+  #   results = list(
+  #       data_store.DB.ScanAttributes(
+  #           "aff4:/C", ["aff4:foo", "aff4:bar"],
+  #           max_records=5,
+  #           token=self.token))
+  #   self.assertEqual(len(results), 5)
 
   def testRDFDatetimeTimestamps(self):
 
@@ -1511,11 +1502,9 @@ class _DataStoreTest(test_lib.GRRBaseTest):
     aff4.FACTORY.Open(
         "aff4:/C.1240/dir/a.b/c", standard.VFSDirectory, token=self.token)
 
-    index = data_store.DB.ResolvePrefix(
-        "aff4:/C.1240/dir", "index:dir/", token=self.token)
-    subjects = [s for (s, _, _) in index]
-    self.assertTrue("index:dir/b" in subjects)
-    self.assertTrue("index:dir/a.b" in subjects)
+    index = list(data_store.DB.ReadAFF4Index("aff4:/C.1240/dir", data_store.DB.NEWEST_TIMESTAMP, token=self.token))
+    self.assertTrue("aff4:/C.1240/dir/b" in index)
+    self.assertTrue("aff4:/C.1240/dir/a.b" in index)
     directory = aff4.FACTORY.Open("aff4:/C.1240/dir", token=self.token)
     self.assertEqual(2, len(list(directory.OpenChildren())))
     self.assertEqual(2, len(list(directory.ListChildren())))
@@ -1613,6 +1602,18 @@ class _DataStoreTest(test_lib.GRRBaseTest):
   def _ListedResolvePrefix(self, *args, **kwargs):
     return list(data_store.DB.ResolvePrefix(*args, **kwargs))
 
+  def _ListedReadAFF4Index(self, *args, **kwargs):
+    return list(data_store.DB.ReadAFF4Index(*args, **kwargs))
+
+  def _ListedReadHashIndex(self, *args, **kwargs):
+    return list(data_store.DB.ReadHashIndex(*args, **kwargs))
+
+  def _ListedReadCollectionIndexEntries(self, *args, **kwargs):
+    return list(data_store.DB.ReadCollectionIndexEntries(*args, **kwargs))
+
+  def _ListedReadVersionedCollectionNotifications(self, *args, **kwargs):
+    return list(data_store.DB.ReadVersionedCollectionNotifications(*args, **kwargs))
+
   def _FlushedDeleteSubject(self, *args, **kwargs):
     # DeleteSubject is not guaranteed to be synchronous. Make sure that
     # we flush data store when testing it.
@@ -1669,21 +1670,34 @@ class _DataStoreTest(test_lib.GRRBaseTest):
         self._ListedMultiResolvePrefix, [self.test_row], ["task:"],
         token=self.token)
 
-  def testMultiResolvePrefixChecksQueryAccessWhenAccessingIndex(self):
+  def testReadAFF4IndexChecksQueryAccessWhenAccessingIndex(self):
     self._InstallACLChecks("q")
 
     self.assertRaises(
         access_control.UnauthorizedAccess,
-        self._ListedMultiResolvePrefix, [self.test_row], ["index:"],
+        self._ListedReadAFF4Index, self.test_row, timestamp=None,
         token=self.token)
+
+  def testReadHashIndexChecksQueryAccessWhenAccessingIndex(self):
+    self._InstallACLChecks("q")
 
     self.assertRaises(
         access_control.UnauthorizedAccess,
-        self._ListedMultiResolvePrefix, [self.test_row], ["task:", "index:"],
-        token=self.token)
+        self._ListedReadHashIndex, self.test_row, token=self.token)
 
-    # Check that simple resolve doesn't require query access.
-    self._ListedMultiResolvePrefix([self.test_row], ["task:"], token=self.token)
+  def testReadVersionedCollectionNotificationsChecksQueryAccessWhenAccessingIndex(self):
+    self._InstallACLChecks("q")
+
+    self.assertRaises(
+        access_control.UnauthorizedAccess,
+        self._ListedReadCollectionIndexEntries, self.test_row, token=self.token)
+
+  def testReadAFF4IndexChecksQueryAccessWhenAccessingIndex(self):
+    self._InstallACLChecks("q")
+
+    self.assertRaises(
+        access_control.UnauthorizedAccess,
+        self._ListedReadVersionedCollectionNotifications, timestamp=None, token=self.token)
 
   def testResolveMultiChecksReadAccess(self):
     self._InstallACLChecks("r")
@@ -1693,24 +1707,6 @@ class _DataStoreTest(test_lib.GRRBaseTest):
         self._ListedResolveMulti,
         self.test_row, ["task:000000001"],
         token=self.token)
-
-  def testResolveMultiChecksQueryAccessWhenAccessingIndex(self):
-    self._InstallACLChecks("q")
-
-    self.assertRaises(
-        access_control.UnauthorizedAccess,
-        self._ListedResolveMulti,
-        self.test_row, ["index:dir/foo"],
-        token=self.token)
-
-    self.assertRaises(
-        access_control.UnauthorizedAccess,
-        self._ListedResolveMulti,
-        self.test_row, ["task:00000001", "index:dir/foo"],
-        token=self.token)
-
-    # Check that simple resolve doesn't require query access.
-    self._ListedResolveMulti(self.test_row, ["task:00000001"], token=self.token)
 
   def testResolvePrefixChecksReadAccess(self):
     self._InstallACLChecks("r")
@@ -1722,19 +1718,6 @@ class _DataStoreTest(test_lib.GRRBaseTest):
         "task:",
         token=self.token)
 
-  def testResolvePrefixChecksQueryAccessWhenAccessingIndex(self):
-    self._InstallACLChecks("q")
-
-    self.assertRaises(
-        access_control.UnauthorizedAccess,
-        self._ListedResolvePrefix,
-        self.test_row,
-        "index:",
-        token=self.token)
-
-    # Check that simple resolve doesn't require query access.
-    self._ListedResolvePrefix(self.test_row, "task:", token=self.token)
-
   def testResolveChecksReadAccess(self):
     self._InstallACLChecks("r")
 
@@ -1744,19 +1727,6 @@ class _DataStoreTest(test_lib.GRRBaseTest):
         self.test_row,
         "task:000000001",
         token=self.token)
-
-  def testResolveChecksQueryAccessWhenAccessingIndex(self):
-    self._InstallACLChecks("q")
-
-    self.assertRaises(
-        access_control.UnauthorizedAccess,
-        data_store.DB.Resolve,
-        self.test_row,
-        "index:dir/foo",
-        token=self.token)
-
-    # Check that simple resolve doesn't require query access.
-    data_store.DB.Resolve(self.test_row, "task:00000001", token=self.token)
 
   def testLimits(self):
     # Create 10 rows with 10 attributes each.

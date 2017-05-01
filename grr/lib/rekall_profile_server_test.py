@@ -9,6 +9,7 @@ from rekall import constants
 
 from grr.lib import aff4
 from grr.lib import config_lib
+from grr.lib import data_store
 from grr.lib import flags
 from grr.lib import rdfvalue
 from grr.lib import rekall_profile_server
@@ -92,6 +93,7 @@ class ProfileServerTest(test_lib.GRRBaseTest):
       self.assertEqual(FakeHandle.read_count, 1)
 
     cache_urn = rdfvalue.RDFURN(config_lib.CONFIG["Rekall.profile_cache_urn"])
+    data_store.DB.Flush()
     cached_items = list(
         aff4.FACTORY.Open(
             cache_urn.Add(constants.PROFILE_REPOSITORY_VERSION),
