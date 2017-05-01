@@ -28,19 +28,9 @@ if $UPGRADE; then
   apt-get --yes upgrade
 fi
 
-echo "Installing dependencies."
-# The packaging tools here are used to repack the linux client installers.
-apt-get install -y \
-  debhelper \
-  dpkg-dev \
-  prelink \
-  python-dev \
-  python-pip \
-  rpm \
-  wget \
-  zip
+scripts/install_dependencies.sh
 
-wget "${DEB_URL}"
+wget -N "${DEB_URL}"
 dpkg -i "${DEB_PACKAGE}"
 
 HOSTNAME=$(hostname)

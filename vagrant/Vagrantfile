@@ -147,6 +147,19 @@ Vagrant.configure(2) do |config|
     box.vm.box = "ubuntu/xenial64"
   end
 
+  config.vm.define "grr_server_dev" do |box|
+    box.vm.box = "ubuntu/xenial64"
+    box.vm.provider "virtualbox" do |vb|
+      vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      vb.memory = "4096"
+    end
+    box.vm.provision "shell" do |s|
+      s.path = "../scripts/install_grr_dev_server.sh"
+      s.args = ["-i", "/usr/share/grr-server", "-r", "/grr"]
+    end
+    box.vm.network "private_network", ip: "192.168.1.100"
+  end
+
   # This is the bare windows VM you get from packer. Just here for testing 32bit
   # build, we don't build with this.
   config.vm.define "windows_7_32_vanilla" do |box|

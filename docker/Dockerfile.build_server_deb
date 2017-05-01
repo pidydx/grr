@@ -9,46 +9,22 @@
 FROM ubuntu:xenial
 MAINTAINER Greg Castle github@mailgreg.com
 
-# The 32bit libs listed here are required for PyInstaller, which isn't used on
-# the server but picked up by the deb library checker as missing. PyInstaller is
-# a client python package dependency and we need that package for the
-# ClientBuild entry point for repacking. Disabling the library check might
-# result in missing something important. Adding the build deps here seems like
-# the least bad option.
-RUN apt-get update && \
-  apt-get install -y \
-  debhelper \
-  dh-systemd \
-  dh-virtualenv \
-  dpkg-dev \
-  lib32z1 \
-  libc6-i386 \
-  libffi-dev \
-  libssl-dev \
-  python2.7-dev \
-  python-pip \
-  prelink \
-  rpm \
-  wget \
-  zip && \
-  pip install --upgrade pip && \
-  pip install virtualenv && \
-  pip install --upgrade setuptools && \
-  virtualenv /tmp/grr-env
+# Install base dependencies
+COPY scripts/install_dependencies.sh /
+RUN /install_dependencies.sh -c -d
 
-# Pull dependencies and templates from pypi and build wheels into a temp
+# Copy the GRR code over. Pull dependencies and templates from pypi and build wheels into a temp
 # virtualenv. All we are doing here is populating the pip cache so it can be
 # cached by docker and make the server build go fast.
-RUN . /tmp/grr-env/bin/activate && \
-pip install wheel && \
-pip install --pre grr-response-server && \
-pip install -f https://storage.googleapis.com/releases.grr-response.com/index.html grr-response-templates && \
-deactivate
 
-# Copy the GRR code over and build the deb. This will create a fresh virtualenv
+COPY . /usr/src/grr/
+
+RUN /usr/src/grr/scripts/install_grr_server_venv.sh -p -i /tmp/grr-env
+
+# Build the deb. This will create a fresh virtualenv
 # and install from src, but re-use the precompiled wheels via pip and docker
 # caching.
-COPY . /usr/src/grr/
+
 WORKDIR /usr/src/grr
 
 # You may see SyntaxError: invalid syntax from pexpect, this seems to be
@@ -56,3 +32,6 @@ WORKDIR /usr/src/grr
 # https://github.com/pexpect/pexpect/issues/220
 # https://bugs.launchpad.net/ubuntu/+source/ubuntu-make/+bug/1507871
 RUN dpkg-buildpackage -us -uc
+
+# After build you can run the following command to copy the built package out of the image
+# docker run --rm -v ${PWD}:/output:rw -u $(id -u) build_package bash -c "cp -r /usr/src/grr-server* /output/"

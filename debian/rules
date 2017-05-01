@@ -17,12 +17,21 @@ dh_python2:
 override_dh_pysupport:
 
 override_dh_auto_clean:
+	rm debian/grr-server.default
+	rm debian/*.service
+	dh_auto_clean
 
 override_dh_auto_test:
 
 override_dh_installinit:
+	# Copy necessary configuration files from install_data before dh_installinit
+	cp -f install_data/etc/default/grr-server.default debian/
+	cp -f install_data/systemd/server/*.service debian/
 	dh_installinit
-	bash scripts/install_server_from_src.sh -i debian/grr-server
+
+	# Postinstall setup script
+	bash scripts/postinstall_server_setup.sh -d -i debian/grr-server
+
 	# Add post installation instructions
 	cat debian/grr-server.postinst.in >> debian/grr-server.postinst.debhelper
 
