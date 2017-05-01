@@ -61,8 +61,11 @@ def StoreCSRFCookie(user, response):
   """Decorator for WSGI handler that inserts CSRF cookie into response."""
 
   csrf_token = GenerateCSRFToken(user, None)
-  response.set_cookie(
-      "csrftoken", csrf_token, max_age=CSRF_TOKEN_DURATION.seconds)
+  response.set_cookie("csrftoken",
+                      csrf_token,
+                      max_age=CSRF_TOKEN_DURATION.seconds,
+                      domain=config_lib.CONFIG.Get("AdminUI.csrf_cookie_domain", None),
+                      secure=config_lib.CONFIG["AdminUI.csrf_cookie_secure"])
 
 
 def ValidateCSRFTokenOrRaise(request):

@@ -52,6 +52,20 @@ config_lib.DEFINE_string(
     "This is a secret key that should be set in the server "
     "config. It is used in CSRF protection.")
 
+config_lib.DEFINE_bool(
+    "AdminUI.csrf_cookie_secure", False,
+    "Whether to use a secure cookie for the CSRF cookie. If this is set"
+    "to True, the cookie will be marked as secure, which means browsers"
+    "may ensure that the cookie is only sent with an HTTPS connection.")
+
+config_lib.DEFINE_string(
+    "AdminUI.csrf_cookie_domain", None,
+    "The domain to be used when setting the CSRF cookie. This can be useful"
+    "for easily allowing cross-subdomain requests to be excluded from the"
+    "normal cross site request forgery protection. It should be set to a"
+    "string such as .example.com to allow a POST request from a form on"
+    "one subdomain to be accepted by a view served from another subdomain.")
+
 config_lib.DEFINE_bool("AdminUI.enable_ssl", False,
                        "Turn on SSL. This needs AdminUI.ssl_cert to be set.")
 
