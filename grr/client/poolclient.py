@@ -38,6 +38,8 @@ flags.DEFINE_bool("fast_poll", False,
                   "poll mode the timeouts are predictable and benchmarks "
                   "results are more stable.")
 
+flags.DEFINE_bool("ignore_location", False,
+                  "If specified, clients will not check location before running.")
 
 class PoolGRRClient(threading.Thread):
   """A GRR client for running in pool mode."""
@@ -58,6 +60,8 @@ class PoolGRRClient(threading.Thread):
 
   def Run(self):
     while not self.stop:
+      if self.enrolled:
+        self.client.SendForemanRequest(override_frequency=False)
       status = self.client.RunOnce()
       if status.code == 200:
         self.enrolled = True
@@ -162,9 +166,10 @@ def CheckLocation():
   """Checks that the poolclient is not accidentally ran against production."""
   for url in (config_lib.CONFIG["Client.server_urls"] +
               config_lib.CONFIG["Client.control_urls"]):
-    if "staging" in url or "localhost" in url:
-      # This is ok.
-      return
+    for allowed_url in config_lib.CONFIG["Client.allowed_pool_client_url_patterns"]:
+      if allowed_url in url:
+        # This is ok.
+        return
   logging.error("Poolclient should only be run against test or staging.")
   exit()
 
@@ -177,7 +182,8 @@ def main(unused_argv):
 
   config_lib.CONFIG.SetWriteBack("/dev/null")
 
-  CheckLocation()
+  if not flags.FLAGS.ignore_location:
+    CheckLocation()
 
   # Let the OS handler also handle sleuthkit requests since sleuthkit is not
   # thread safe.

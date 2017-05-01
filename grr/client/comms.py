@@ -1441,12 +1441,24 @@ class GRRHTTPClient(object):
 
     return response
 
-  def SendForemanRequest(self):
-    self.client_worker.SendReply(
-        rdf_protodict.DataBlob(),
-        session_id=rdfvalue.FlowSessionID(flow_name="Foreman"),
-        priority=rdf_flows.GrrMessage.Priority.LOW_PRIORITY,
-        require_fastpoll=False)
+  def SendForemanRequest(self, override_frequency=True):
+    now = time.time()
+    # Check with the foreman if we need to
+    if (now > self.last_foreman_check +
+      config_lib.CONFIG["Client.foreman_check_frequency"]) or override_frequency:
+      # We must not queue messages from the comms thread with blocking=True
+      # or we might deadlock. If the output queue is full, we can't accept
+      # more work from the foreman anyways so it's ok to drop the message.
+      try:
+        self.client_worker.SendReply(
+          rdf_protodict.DataBlob(),
+          session_id=rdfvalue.FlowSessionID(flow_name="Foreman"),
+          priority=rdf_flows.GrrMessage.Priority.LOW_PRIORITY,
+          require_fastpoll=False,
+          blocking=False)
+        self.last_foreman_check = now
+      except Queue.Full:
+        pass
 
   def _FetchServerCertificate(self):
     """Attempts to fetch the server cert.
@@ -1484,23 +1496,7 @@ class GRRHTTPClient(object):
       # Check if there is a message from the nanny to be sent.
       self.client_worker.SendNannyMessage()
 
-      now = time.time()
-      # Check with the foreman if we need to
-      if (now > self.last_foreman_check +
-          config_lib.CONFIG["Client.foreman_check_frequency"]):
-        # We must not queue messages from the comms thread with blocking=True
-        # or we might deadlock. If the output queue is full, we can't accept
-        # more work from the foreman anyways so it's ok to drop the message.
-        try:
-          self.client_worker.SendReply(
-              rdf_protodict.DataBlob(),
-              session_id=rdfvalue.FlowSessionID(flow_name="Foreman"),
-              priority=rdf_flows.GrrMessage.Priority.LOW_PRIORITY,
-              require_fastpoll=False,
-              blocking=False)
-          self.last_foreman_check = now
-        except Queue.Full:
-          pass
+      self.SendForemanRequest(override_frequency=False)
 
       try:
         self.RunOnce()

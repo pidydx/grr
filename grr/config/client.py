@@ -72,6 +72,11 @@ config_lib.DEFINE_string(
 config_lib.DEFINE_list(
     name="Client.server_urls", default=[], help="Base URL for client control.")
 
+config_lib.DEFINE_list(
+    name="Client.allowed_pool_client_url_patterns",
+    default=["staging", "localhost"],
+    help="Substrings to determine allowed URLs for pool clients.")
+
 config_lib.DEFINE_list("Client.control_urls", [],
                        "DEPRECATED List of URLs of the controlling server. "
                        "Use server_urls instead.")
