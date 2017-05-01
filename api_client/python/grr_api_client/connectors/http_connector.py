@@ -40,19 +40,30 @@ class HttpConnector(connector.Connector):
   DEFAULT_PAGE_SIZE = 50
   DEFAULT_BINARY_CHUNK_SIZE = 66560
 
-  def __init__(self, api_endpoint=None, auth=None, page_size=None):
+  def __init__(self, api_endpoint=None, auth=None, page_size=None, session=None):
     super(HttpConnector, self).__init__()
-
+    if session:
+      self.session = session
+    else:
+      self.session = requests.Session()
+      self.session.auth = auth
     self.api_endpoint = api_endpoint
-    self.auth = auth
     self._page_size = page_size or self.DEFAULT_PAGE_SIZE
 
-    self.csrf_token = None
+    self.csrf_token = self._GetCSRFToken()
+    self.headers = {
+      "x-csrftoken": self.csrf_token,
+      "x-requested-with": "XMLHttpRequest"
+    }
+    self.session.headers.update(self.headers)
+    self.cookies = {"csrftoken": self.csrf_token}
+
+    self._FetchRoutingMap()
 
   def _GetCSRFToken(self):
     logger.debug("Fetching CSRF token from %s...", self.api_endpoint)
 
-    index_response = requests.get(self.api_endpoint, auth=self.auth)
+    index_response = self.session.get(self.api_endpoint)
     self._CheckResponseStatus(index_response)
 
     csrf_token = index_response.cookies.get("csrftoken")
@@ -61,20 +72,12 @@ class HttpConnector(connector.Connector):
       raise RuntimeError("Can't get CSRF token.")
 
     logger.debug("Got CSRF token: %s", csrf_token)
-
     return csrf_token
 
   def _FetchRoutingMap(self):
-    headers = {
-        "x-csrftoken": self.csrf_token,
-        "x-requested-with": "XMLHttpRequest"
-    }
-    cookies = {"csrftoken": self.csrf_token}
-
     url = "%s/%s" % (self.api_endpoint.strip("/"),
                      "api/v2/reflection/api-methods")
-    response = requests.get(
-        url, headers=headers, cookies=cookies, auth=self.auth)
+    response = self.session.get(url, cookies=self.cookies)
     self._CheckResponseStatus(response)
 
     json_str = response.content[len(self.JSON_PREFIX):]
@@ -108,12 +111,7 @@ class HttpConnector(connector.Connector):
     self.handlers_map = routing.Map(routing_rules)
 
     parsed_endpoint_url = urlparse.urlparse(self.api_endpoint)
-    self.urls = self.handlers_map.bind(parsed_endpoint_url.netloc, "/")
-
-  def _InitializeIfNeeded(self):
-    if not self.csrf_token:
-      self.csrf_token = self._GetCSRFToken()
-      self._FetchRoutingMap()
+    self.urls = self.handlers_map.bind(parsed_endpoint_url.netloc, "/", url_scheme=parsed_endpoint_url.scheme)
 
   def _CoerceValueToQueryStringType(self, field, value):
     if isinstance(value, bool):
@@ -130,9 +128,7 @@ class HttpConnector(connector.Connector):
         if self.handlers_map.is_endpoint_expecting(handler_name, field.name):
           path_params[field.name] = self._CoerceValueToQueryStringType(field,
                                                                        value)
-
     url = self.urls.build(handler_name, path_params, force_external=True)
-
     method = None
     for rule in self.handlers_map.iter_rules():
       if rule.endpoint == handler_name:
@@ -190,7 +186,6 @@ class HttpConnector(connector.Connector):
       raise errors.UnknownError(message)
 
   def BuildRequest(self, method_name, args):
-    self._InitializeIfNeeded()
     method, url, path_params_names = self._GetMethodUrlAndPathParamsNames(
         method_name, args)
 
@@ -201,35 +196,26 @@ class HttpConnector(connector.Connector):
       body = self._ArgsToBody(args, path_params_names)
       query_params = {}
 
-    headers = {
-        "x-csrftoken": self.csrf_token,
-        "x-requested-with": "XMLHttpRequest"
-    }
-    cookies = {"csrftoken": self.csrf_token}
     logger.debug("%s request: %s (query: %s, body: %s, headers %s)", method,
-                 url, query_params, body, headers)
+                 url, query_params, body, self.headers)
     return requests.Request(
         method,
         url,
         data=body,
         params=query_params,
-        headers=headers,
-        cookies=cookies,
-        auth=self.auth)
+        cookies=self.cookies)
 
   @property
   def page_size(self):
     return self._page_size
 
   def SendRequest(self, handler_name, args):
-    self._InitializeIfNeeded()
     method_descriptor = self.api_methods[handler_name]
 
     request = self.BuildRequest(method_descriptor.name, args)
-    prepped_request = request.prepare()
+    prepped_request = self.session.prepare_request(request)
 
-    session = requests.Session()
-    response = session.send(prepped_request)
+    response = self.session.send(prepped_request)
     self._CheckResponseStatus(response)
 
     content = response.content
@@ -251,8 +237,7 @@ class HttpConnector(connector.Connector):
     request = self.BuildRequest(method_descriptor.name, args)
     prepped_request = request.prepare()
 
-    session = requests.Session()
-    response = session.send(prepped_request, stream=True)
+    response = self.session.send(prepped_request, stream=True)
     self._CheckResponseStatus(response)
 
     def GenerateChunks():

@@ -40,10 +40,10 @@ class GrrApi(object):
     return hunt.ListHuntApprovals(context=self._context)
 
 
-def InitHttp(api_endpoint=None, page_size=None, auth=None):
+def InitHttp(api_endpoint=None, page_size=None, auth=None, session=None):
   """Inits an GRR API object with a HTTP connector."""
 
   connector = http_connector.HttpConnector(
-      api_endpoint=api_endpoint, page_size=page_size, auth=auth)
+      api_endpoint=api_endpoint, page_size=page_size, auth=auth, session=session)
 
   return GrrApi(connector=connector)

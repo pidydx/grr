@@ -7,7 +7,6 @@ import json
 import os
 
 import portpicker
-import requests
 
 from google.protobuf import json_format
 import logging
@@ -80,9 +79,7 @@ class HttpApiRegressionTestMixinBase(object):
               api_value_renderers.RenderValue(body_args)),
           cls=http_api.JSONEncoderWithRDFPrimitivesSupport)
 
-    prepped_request = request.prepare()
-
-    return request, prepped_request
+    return request
 
   def _PrepareV2Request(self, method, args=None):
     """Prepares API v2 request for a given method and args."""
@@ -91,9 +88,8 @@ class HttpApiRegressionTestMixinBase(object):
     if args:
       args_proto = args.AsPrimitiveProto()
     request = self.connector.BuildRequest(method, args_proto)
-    prepped_request = request.prepare()
 
-    return request, prepped_request
+    return request
 
   def HandleCheck(self, method_metadata, args=None, replace=None):
     """Does regression check for given method, args and a replace function."""
@@ -102,17 +98,17 @@ class HttpApiRegressionTestMixinBase(object):
       raise ValueError("replace can't be None")
 
     if self.__class__.api_version == 1:
-      request, prepped_request = self._PrepareV1Request(
+      request = self._PrepareV1Request(
           method_metadata.name, args=args)
     elif self.__class__.api_version == 2:
-      request, prepped_request = self._PrepareV2Request(
+      request = self._PrepareV2Request(
           method_metadata.name, args=args)
     else:
       raise ValueError("api_version may be only 1 or 2, not %d",
                        flags.FLAGS.api_version)
 
-    session = requests.Session()
-    response = session.send(prepped_request)
+    prepped_request = self.connector.session.prepare_request(request)
+    response = self.connector.session.send(prepped_request)
 
     check_result = {
         "url": replace(prepped_request.path_url),
